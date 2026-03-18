@@ -40,17 +40,17 @@
             v-for="v in todayVisits"
             :key="v.id"
             class="sheet-item"
-            @click="panTo(v.geoLat, v.geoLng, v)"
+            @click="panTo(v.lat, v.lng, v)"
           >
-            <div class="sheet-marker" :style="{ background: getStatusColor(v.status) }">
-              <span class="material-symbols-rounded" style="font-size:14px; color:white">{{ getVisitTypeIcon(v.type) }}</span>
+            <div class="sheet-marker" :style="{ background: stageColor(v.stage_id) }">
+              <span class="material-symbols-rounded" style="font-size:14px; color:white">event</span>
             </div>
             <div class="sheet-item-info">
               <span class="sheet-item-name">{{ v.title }}</span>
-              <span class="sheet-item-addr">{{ v.address }}</span>
+              <span class="sheet-item-addr">{{ v.stage_name || v.stage_id }} · {{ v.date || '' }}</span>
             </div>
             <div class="sheet-item-meta">
-              <span class="sheet-item-time">{{ v.time }}</span>
+              <span class="sheet-item-time">{{ v.date || '' }}</span>
               <router-link :to="`/visits/${v.id}`" class="sheet-item-link" @click.stop>
                 <span class="material-symbols-rounded" style="font-size:16px">open_in_new</span>
               </router-link>
@@ -65,22 +65,20 @@
         <div class="sheet-list">
           <div
             v-for="c in allClients"
-            :key="c.id"
+            :key="c.deal_id || c.id"
             class="sheet-item"
             @click="panTo(c.lat, c.lng, c)"
           >
-            <div class="sheet-marker" :style="{ background: c.hasPlannedVisit ? 'var(--color-success)' : '#94A3B8' }">
+            <div class="sheet-marker" style="background: #94A3B8">
               <span class="material-symbols-rounded" style="font-size:14px; color:white">domain</span>
             </div>
             <div class="sheet-item-info">
-              <span class="sheet-item-name">{{ c.name }}</span>
-              <span class="sheet-item-addr">{{ c.address }}</span>
+              <span class="sheet-item-name">{{ c.company_name || c.deal_title || c.title || '—' }}</span>
+              <span class="sheet-item-addr">{{ c.company_address || c.stage_name || '' }}</span>
             </div>
-            <button class="sheet-plan-btn" @click.stop="planVisit(c)" :title="c.hasPlannedVisit ? 'Запланирован' : 'Запланировать'">
-              <span class="material-symbols-rounded" :style="{ color: c.hasPlannedVisit ? 'var(--color-success)' : 'var(--color-primary)' }">
-                {{ c.hasPlannedVisit ? 'event_available' : 'add_location' }}
-              </span>
-            </button>
+            <router-link :to="`/visits/${c.deal_id || c.id}`" class="sheet-item-link" @click.stop>
+              <span class="material-symbols-rounded" style="font-size:18px; color: var(--color-primary)">location_on</span>
+            </router-link>
           </div>
         </div>
       </div>
@@ -95,7 +93,7 @@
     <div v-if="showPlanModal" class="modal-overlay" @click.self="showPlanModal = false">
       <div class="modal glass animate-scale-in">
         <h3 class="modal-title">Запланировать визит</h3>
-        <p class="modal-subtitle">{{ selectedClient?.name }}</p>
+        <p class="modal-subtitle">{{ selectedClient?.company_name || selectedClient?.title || '' }}</p>
         <div class="modal-field">
           <label>Дата</label>
           <input type="date" v-model="planDate" class="modal-input" />
@@ -130,11 +128,21 @@
 
 <script setup>
 import { ref, onMounted, watch, nextTick } from 'vue'
-import { visits, allClients, getStatusColor, getVisitTypeIcon } from '../data/mock'
+import { useVisits } from '../composables/useVisits'
+
+const { visitsToday, loadVisits } = useVisits()
 
 const activeTab = ref('today')
 const mapEl = ref(null)
-const todayVisits = visits
+const todayVisits = visitsToday
+const allClients = visitsToday  // пока клиенты = визиты (API клиентов можно добавить позже)
+
+function stageColor(stageId) {
+  if (!stageId) return '#94A3B8'
+  const short = stageId.includes(':') ? stageId.split(':')[1] : stageId
+  const map = { NEW: '#4DA6FF', PREPARATION: '#FFB020', PREPAYMENT_INVOICE: '#A78BFA', EXECUTING: '#FF6B35', WON: '#00C48C', LOSE: '#FF4D6A' }
+  return map[short] || '#4DA6FF'
+}
 const sheetExpanded = ref(false)
 const isLocating = ref(false)
 
@@ -217,26 +225,24 @@ function updateMarkers() {
   if (!mapInstance || !window.ymaps) return
   mapInstance.geoObjects.removeAll()
 
-  const items = activeTab.value === 'today' ? todayVisits : allClients
+  const items = activeTab.value === 'today' ? todayVisits.value : allClients.value
 
   items.forEach((item) => {
     const lat = item.geoLat || item.lat
     const lng = item.geoLng || item.lng
     if (!lat || !lng) return
 
-    const isVisit = activeTab.value === 'today'
+  const isVisit = activeTab.value === 'today'
     const color = isVisit
-      ? (item.status === 'completed' ? '#00C48C' : item.status === 'in_progress' ? '#FFB020' : '#4DA6FF')
-      : (item.hasPlannedVisit ? '#00C48C' : '#94A3B8')
+      ? (item.stage_id?.includes('WON') ? '#00C48C' : item.stage_id?.includes('LOSE') ? '#FF4D6A' : '#4DA6FF')
+      : '#94A3B8'
 
     const placemark = new ymaps.Placemark(
       [lat, lng],
       {
-        hintContent: item.title || item.name,
-        balloonContentHeader: item.title || item.name,
-        balloonContentBody: isVisit
-          ? `<b>${item.time}</b><br/>${item.address}`
-          : `${item.contact}<br/>${item.address}`
+        hintContent: item.title,
+        balloonContentHeader: item.title,
+        balloonContentBody: `<b>${item.stage_name || item.stage_id || ''}</b><br/>${item.date || ''}<br/>${item.comments ? item.comments.substring(0, 100) : ''}`
       },
       {
         preset: 'islands#dotIcon',
@@ -249,6 +255,7 @@ function updateMarkers() {
 }
 
 onMounted(async () => {
+  await loadVisits()
   // Load Yandex Maps 2.1 (works without API key)
   await new Promise((resolve) => {
     if (window.ymaps) { resolve(); return }
@@ -338,7 +345,7 @@ watch(activeTab, () => {
   position: absolute;
   bottom: 0; left: 0; right: 0;
   z-index: 10;
-  max-height: 45dvh;
+  max-height: 20dvh;
   background: var(--color-bg-card);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: 0 -4px 24px rgba(0,0,0,0.12);
@@ -349,16 +356,16 @@ watch(activeTab, () => {
 }
 
 .sheet.expanded {
-  max-height: 75dvh;
+  max-height: 70dvh;
 }
 
 @media (min-width: 768px) {
   .sheet {
     left: var(--sidebar-width);
-    max-height: 40dvh;
+    max-height: 18dvh;
     padding-bottom: 0;
   }
-  .sheet.expanded { max-height: 70dvh; }
+  .sheet.expanded { max-height: 65dvh; }
   .map-header { left: var(--sidebar-width); }
   .fab-location { left: calc(var(--sidebar-width) + var(--space-base)); }
 }

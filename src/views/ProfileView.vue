@@ -150,20 +150,55 @@
 import { ref, computed, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
-import { currentUser, formatCurrency } from '../data/mock'
+import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
-const user = currentUser
+const auth   = useAuth()
 const notifyOn = ref(true)
 
 const { isDarkTheme, toggleTheme } = inject('theme')
 
-const todayPercent = computed(() => Math.round((user.stats.today.completed / user.stats.today.visits) * 100))
-const weekPercent = computed(() => Math.round((user.stats.week.completed / user.stats.week.visits) * 100))
-const monthPercent = computed(() => Math.round((user.stats.month.completed / user.stats.month.visits) * 100))
+// Реальные данные пользователя из OAuth
+const user = computed(() => {
+  const u = auth.user.value || {}
+  const firstName = u.firstName || ''
+  const lastName  = u.lastName  || ''
+  const initials  = (firstName[0] || '') + (lastName[0] || '')
+  return {
+    name:       u.fullName || 'Пользователь',
+    initials:   initials.toUpperCase() || 'U',
+    role:       u.position || 'Сотрудник',
+    region:     '',
+    phone:      u.phone    || '—',
+    email:      u.email    || '—',
+    department: u.position || '—',
+    stats: {
+      today: { completed: 0, visits: 0, orders: 0, revenue: 0 },
+      week:  { completed: 0, visits: 0, orders: 0, revenue: 0 },
+      month: { completed: 0, visits: 0, orders: 0, revenue: 0 },
+    }
+  }
+})
+
+const todayPercent = computed(() => {
+  const s = user.value.stats.today
+  return s.visits ? Math.round((s.completed / s.visits) * 100) : 0
+})
+const weekPercent = computed(() => {
+  const s = user.value.stats.week
+  return s.visits ? Math.round((s.completed / s.visits) * 100) : 0
+})
+const monthPercent = computed(() => {
+  const s = user.value.stats.month
+  return s.visits ? Math.round((s.completed / s.visits) * 100) : 0
+})
+
+function formatCurrency(val) {
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(val || 0)
+}
 
 function handleLogout() {
-  localStorage.removeItem('rocadamed_auth')
+  auth.logout()
   router.push('/login')
 }
 </script>

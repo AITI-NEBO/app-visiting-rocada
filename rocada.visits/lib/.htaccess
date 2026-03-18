@@ -1,0 +1,25 @@
+# .htaccess для lib/ — фронт-контроллер API rocada.visits
+# Позволяет использовать чистые URL: router.php/api/visits/42
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Файлы и папки — отдавать как есть
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Всё остальное → router.php (PATH_INFO)
+    RewriteRule ^(.*)$ router.php/$1 [L,QSA]
+</IfModule>
+
+# router.php всегда доступен
+<Files "router.php">
+    Require all granted
+</Files>
+
+# Закрываем прямой доступ к вспомогательным PHP файлам
+<FilesMatch "^(?!router\.php$).+\.php$">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes

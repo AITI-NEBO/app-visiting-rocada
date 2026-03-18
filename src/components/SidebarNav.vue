@@ -24,30 +24,40 @@
 
     <div class="sidebar-user">
       <div class="sidebar-user-avatar">
-        <span class="sidebar-user-initials">АП</span>
+        <span class="sidebar-user-initials">{{ userInitials }}</span>
         <span class="sidebar-user-status"></span>
       </div>
       <div class="sidebar-user-info">
-        <span class="sidebar-user-name">Алексей Петров</span>
-        <span class="sidebar-user-role">Торговый представитель</span>
+        <span class="sidebar-user-name">{{ userName }}</span>
+        <span class="sidebar-user-role">{{ userRole }}</span>
       </div>
     </div>
   </aside>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { visits } from '../data/mock'
+import { useVisits } from '../composables/useVisits'
+import { useAuth } from '../composables/useAuth'
 
 const route = useRoute()
-const pendingCount = visits.filter(v => v.status !== 'completed').length
+const { todayCount } = useVisits()
+const auth = useAuth()
 
-const navItems = [
+const userName = computed(() => auth.user.value?.fullName || 'Пользователь')
+const userInitials = computed(() => {
+  const u = auth.user.value || {}
+  return ((u.firstName?.[0] || '') + (u.lastName?.[0] || '')).toUpperCase() || 'U'
+})
+const userRole = computed(() => auth.user.value?.position || '')
+
+const navItems = computed(() => [
   { to: '/', icon: 'home', label: 'Главная', exact: true },
-  { to: '/visits', icon: 'assignment', label: 'Визиты', badge: pendingCount },
+  { to: '/visits', icon: 'assignment', label: 'Визиты', badge: todayCount.value || null },
   { to: '/map', icon: 'map', label: 'Карта' },
   { to: '/profile', icon: 'person', label: 'Профиль' }
-]
+])
 
 function isActive(item) {
   if (item.exact) return route.path === item.to

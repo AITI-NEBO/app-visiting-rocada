@@ -25,17 +25,17 @@
             </div>
             <div class="progress-labels">
               <span class="progress-done">{{ completedCount }} выполнено</span>
-              <span class="progress-total">из {{ user.stats.today.visits }}</span>
+              <span class="progress-total">из {{ todayTotal }}</span>
             </div>
           </div>
           <div class="stats-grid">
             <div class="stat-item">
-              <span class="stat-value text-gradient">{{ completedCount }}</span>
+              <span class="stat-value text-gradient">{{ successCount }}</span>
               <span class="stat-label">Завершено</span>
             </div>
             <div class="stat-item">
-              <span class="stat-value" style="color: var(--color-warning)">{{ user.stats.today.orders }}</span>
-              <span class="stat-label">Заказов</span>
+              <span class="stat-value" style="color: var(--color-danger)">{{ failCount }}</span>
+              <span class="stat-label">Провалено</span>
             </div>
             <div class="stat-item">
               <span class="stat-value" style="color: var(--color-accent)">{{ formatRevenue }}</span>
@@ -95,25 +95,32 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import VisitCard from '../components/VisitCard.vue'
-import { currentUser, visits, visitsTomorrow, formatCurrency } from '../data/mock'
+import { useAuth } from '../composables/useAuth'
+import { useVisits } from '../composables/useVisits'
 
-const user = currentUser
-const todayCount = visits.length
-const tomorrowCount = visitsTomorrow.length
+const auth = useAuth()
+const { visitsToday, visitsTomorrow, todayCount, tomorrowCount, todayTotal, tomorrowTotal, successCount, failCount, loadVisits } = useVisits()
 
-const completedCount = computed(() => visits.filter(v => v.status === 'completed').length)
-const progressPercent = computed(() => Math.round((completedCount.value / user.stats.today.visits) * 100))
-const formatRevenue = computed(() => {
-  const amount = user.stats.today.revenue
-  if (amount >= 1000) return Math.round(amount / 1000) + 'К'
-  return amount + '₽'
+onMounted(() => loadVisits())
+
+const user = computed(() => {
+  const u = auth.user.value || {}
+  return {
+    name:   u.fullName || 'Пользователь',
+    role:   u.position || '',
+    region: '',
+  }
 })
 
-const nextVisit = computed(() => visits.find(v => v.status === 'in_progress' || v.status === 'planned'))
-const recentCompleted = computed(() => visits.filter(v => v.status === 'completed').slice(-2))
+const completedCount = computed(() => successCount.value)
+const progressPercent = computed(() => todayTotal.value ? Math.round((successCount.value / todayTotal.value) * 100) : 0)
+const formatRevenue = computed(() => '—')
+
+const nextVisit = computed(() => visitsToday.value[0] || null)
+const recentCompleted = computed(() => [])
 
 const formattedDate = new Date().toLocaleDateString('ru-RU', {
   day: 'numeric',

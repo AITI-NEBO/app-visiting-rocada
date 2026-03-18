@@ -1,5 +1,0 @@
-<?
-$arModuleVersion = [
-    'VERSION' => '1.0.0',
-    'VERSION_DATE' => '2024-18-11 00:00:00'
-];

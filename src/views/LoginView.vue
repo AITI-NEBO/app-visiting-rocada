@@ -1,6 +1,6 @@
 <template>
   <div class="login-page">
-    <!-- Background effects -->
+    <!-- Background orbs -->
     <div class="bg-orb bg-orb-1"></div>
     <div class="bg-orb bg-orb-2"></div>
     <div class="bg-orb bg-orb-3"></div>
@@ -21,71 +21,80 @@
         <p class="brand-tagline">Мобильное приложение для<br/>выездных сотрудников</p>
       </div>
 
-      <!-- Features -->
-      <div class="features-section animate-fade-in-up" style="animation-delay: 200ms">
-        <div class="feature-item">
-          <span class="material-symbols-rounded feature-icon">assignment</span>
-          <span class="feature-text">Визиты на сегодня и завтра</span>
+      <!-- Auth box -->
+      <div class="auth-box animate-fade-in-up" style="animation-delay: 200ms">
+        <!-- Error -->
+        <div v-if="errorMsg" class="error-banner">
+          <span class="material-symbols-rounded error-icon">error</span>
+          <span>{{ errorMsg }}</span>
         </div>
-        <div class="feature-item">
-          <span class="material-symbols-rounded feature-icon">location_on</span>
-          <span class="feature-text">Отправка геолокации</span>
-        </div>
-        <div class="feature-item">
-          <span class="material-symbols-rounded feature-icon">chat</span>
-          <span class="feature-text">Комментарии к визитам</span>
-        </div>
-      </div>
 
-      <!-- Login button -->
-      <div class="login-actions animate-fade-in-up" style="animation-delay: 400ms">
-        <button class="login-btn" @click="handleLogin" :disabled="loading">
-          <span v-if="!loading" class="btn-content">
-            <span class="material-symbols-rounded btn-icon">login</span>
-            Войти в систему
+        <!-- OAuth кнопка -->
+        <button
+          class="oauth-btn"
+          :disabled="loading"
+          @click="handleOAuth"
+        >
+          <span v-if="loading" class="btn-loading">
+            <span class="material-symbols-rounded spinning">progress_activity</span>
+            Выполняется вход...
           </span>
-          <span v-else class="btn-loading">
-            <img src="/logo.jpeg" alt="" class="btn-logo-spinner" />
-            Авторизация...
+          <span v-else class="btn-content">
+            <span class="b24-logo">
+              <img src="/logo.jpeg" alt="" class="oauth-logo" />
+            </span>
+            Войти через Битрикс24
           </span>
         </button>
-        <p class="login-hint">Демо-режим • Вход без пароля</p>
+
+        <p class="portal-hint">
+          Портал: <a href="https://office.rocadatech.ru" target="_blank" class="portal-link">office.rocadatech.ru</a>
+        </p>
       </div>
     </div>
 
-    <!-- Version -->
-    <div class="login-footer animate-fade-in" style="animation-delay: 600ms">
-      <span>RocadaMed PWA v1.0</span>
-      <span>•</span>
-      <span>IT Небо</span>
+    <!-- Footer -->
+    <div class="login-footer">
+      <span class="material-symbols-rounded" style="font-size:16px">lock</span>
+      Защищённое подключение
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
-const loading = ref(false)
+const route  = useRoute()
+const auth   = useAuth()
 
-function handleLogin() {
-  loading.value = true
-  setTimeout(() => {
-    localStorage.setItem('rocadamed_auth', 'true')
-    router.push('/')
-  }, 1200)
+const loading  = ref(false)
+const errorMsg = ref('')
+
+function handleOAuth() {
+  errorMsg.value = ''
+  loading.value  = true
+  try {
+    auth.loginOAuth()
+    // loginOAuth делает window.location.href, дальше не выполняется
+  } catch (err) {
+    errorMsg.value = err.message
+    loading.value  = false
+  }
 }
 </script>
 
 <style scoped>
+/* Page */
 .login-page {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-xl);
+  padding: var(--space-xl) var(--space-lg);
   position: relative;
   overflow: hidden;
   background: var(--color-bg-primary);
@@ -96,45 +105,33 @@ function handleLogin() {
   position: absolute;
   border-radius: 50%;
   filter: blur(80px);
-  opacity: 0.3;
   pointer-events: none;
+  animation: float 6s ease-in-out infinite;
 }
-
 .bg-orb-1 {
-  width: 300px;
-  height: 300px;
-  background: var(--color-primary);
-  top: -80px;
-  right: -80px;
-  animation: float 8s ease-in-out infinite;
+  width: 300px; height: 300px; top: -80px; right: -60px;
+  background: radial-gradient(circle, rgba(99,102,241,.25), transparent 70%);
 }
-
 .bg-orb-2 {
-  width: 250px;
-  height: 250px;
-  background: var(--color-accent);
-  bottom: -60px;
-  left: -60px;
-  animation: float 6s ease-in-out infinite reverse;
+  width: 250px; height: 250px; bottom: -60px; left: -40px;
+  background: radial-gradient(circle, rgba(16,185,129,.15), transparent 70%);
+  animation-delay: -3s;
 }
-
 .bg-orb-3 {
-  width: 150px;
-  height: 150px;
-  background: #7C3AED;
-  top: 40%;
-  left: 50%;
-  animation: float 10s ease-in-out infinite;
+  width: 200px; height: 200px; top: 40%; left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(139,92,246,.1), transparent 70%);
+  animation-delay: -1.5s;
 }
 
+/* Content */
 .login-content {
   width: 100%;
   max-width: 380px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2xl);
-  position: relative;
+  gap: var(--space-xl);
   z-index: 1;
 }
 
@@ -143,13 +140,12 @@ function handleLogin() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-lg);
+  gap: var(--space-md);
 }
 
 .logo-wrapper {
   position: relative;
-  width: 120px;
-  height: 120px;
+  width: 96px; height: 96px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -166,28 +162,20 @@ function handleLogin() {
   mask-composite: exclude;
   animation: spin 8s linear infinite;
 }
-
 .logo-ring-outer {
-  inset: -8px;
-  opacity: 0.4;
+  inset: -8px; opacity: .4;
   animation: spin 12s linear infinite reverse;
 }
 
 .logo-icon {
-  width: 88px;
-  height: 88px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 72px; height: 72px;
   border-radius: 50%;
   overflow: hidden;
   position: relative;
   z-index: 1;
 }
-
 .logo-img {
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
   object-fit: cover;
   animation: float 4s ease-in-out infinite;
 }
@@ -197,7 +185,6 @@ function handleLogin() {
   font-weight: var(--font-weight-extrabold);
   letter-spacing: -0.5px;
 }
-
 .brand-tagline {
   font-size: var(--font-size-base);
   color: var(--color-text-secondary);
@@ -205,100 +192,81 @@ function handleLogin() {
   line-height: var(--line-height-relaxed);
 }
 
-/* Features */
-.features-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
+/* Auth box */
+.auth-box {
   width: 100%;
-}
-
-.feature-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-base);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: var(--radius-md);
+  background: rgba(255,255,255,.04);
   border: 1px solid var(--color-border);
-  transition: background var(--transition-fast), transform var(--transition-fast);
-}
-
-.feature-item:hover {
-  background: rgba(255, 255, 255, 0.07);
-  transform: translateX(4px);
-}
-
-.feature-icon {
-  font-size: 22px;
-  color: var(--color-accent);
-}
-
-.feature-text {
-  font-size: var(--font-size-base);
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-medium);
-}
-
-/* Login actions */
-.login-actions {
-  width: 100%;
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl);
   display: flex;
   flex-direction: column;
+  gap: var(--space-lg);
   align-items: center;
-  gap: var(--space-base);
 }
 
-.login-btn {
+/* Error */
+.error-banner {
   width: 100%;
-  height: 52px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.3);
+  border-radius: var(--radius-md);
+  color: #fca5a5;
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+.error-icon { font-size: 18px; flex-shrink: 0; color: #ef4444; margin-top: 1px; }
+
+/* OAuth button */
+.oauth-btn {
+  width: 100%;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
   color: white;
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, opacity .15s;
   box-shadow: var(--shadow-glow-accent);
+  border: none;
 }
-
-.login-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 0 30px var(--color-accent-glow);
+.oauth-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 0 36px var(--color-accent-glow);
 }
-
-.login-btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.login-btn:disabled {
-  opacity: 0.8;
-}
+.oauth-btn:active:not(:disabled) { transform: scale(.97); }
+.oauth-btn:disabled { opacity: .6; cursor: not-allowed; }
 
 .btn-content, .btn-loading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
+  display: flex; align-items: center; gap: 10px;
 }
 
-.btn-icon {
-  font-size: 22px;
-}
-
-.btn-logo-spinner {
-  width: 22px;
-  height: 22px;
+.b24-logo {
+  width: 26px; height: 26px;
   border-radius: 50%;
-  object-fit: cover;
-  animation: spin 1s linear infinite;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,.4);
+  flex-shrink: 0;
 }
+.oauth-logo { width: 100%; height: 100%; object-fit: cover; }
 
-.login-hint {
-  font-size: var(--font-size-sm);
+.spinning { animation: spin .8s linear infinite; font-size: 20px; }
+
+/* Hint */
+.portal-hint {
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
 }
+.portal-link { color: var(--color-accent); text-decoration: underline dotted; }
 
 /* Footer */
 .login-footer {
@@ -313,22 +281,9 @@ function handleLogin() {
 
 /* Desktop */
 @media (min-width: 768px) {
-  .login-content {
-    max-width: 420px;
-  }
-
-  .logo-wrapper {
-    width: 140px;
-    height: 140px;
-  }
-
-  .logo-icon {
-    width: 100px;
-    height: 100px;
-  }
-
-  .brand-name {
-    font-size: 2.5rem;
-  }
+  .login-content { max-width: 420px; }
+  .logo-wrapper { width: 110px; height: 110px; }
+  .logo-icon { width: 80px; height: 80px; }
+  .brand-name { font-size: 2.5rem; }
 }
 </style>

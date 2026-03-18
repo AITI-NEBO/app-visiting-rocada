@@ -87,15 +87,28 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import LogoSpinner from '../components/LogoSpinner.vue'
-import { visits, visitsTomorrow } from '../data/mock'
+import { useVisits } from '../composables/useVisits'
 
 const route = useRoute()
-const allVisits = [...visits, ...visitsTomorrow]
-const visit = computed(() => allVisits.find(v => v.id === Number(route.params.id)))
+const { findVisit, loadVisits, addComment, loadComments } = useVisits()
+
+const visit = ref(null)
+const comments = ref([])
+
+onMounted(async () => {
+  await loadVisits()
+  visit.value = findVisit(route.params.id)
+  try {
+    const data = await loadComments(route.params.id)
+    comments.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    console.warn('[CommentView] Could not load comments:', e)
+  }
+})
 
 const commentText = ref('')
 const isFocused = ref(false)
@@ -103,16 +116,22 @@ const isSending = ref(false)
 const isSent = ref(false)
 
 function formatTime(dateStr) {
+  if (!dateStr) return ''
   return dateStr.split(' ')[1] || dateStr
 }
 
-function sendComment() {
+async function sendComment() {
   if (!commentText.value.trim()) return
   isSending.value = true
-  setTimeout(() => {
-    isSending.value = false
+  try {
+    await addComment(route.params.id, commentText.value.trim())
     isSent.value = true
-  }, 1200)
+  } catch (e) {
+    console.error('[CommentView] Error sending comment:', e)
+    alert('Ошибка: ' + e.message)
+  } finally {
+    isSending.value = false
+  }
 }
 </script>
 

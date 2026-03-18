@@ -1,9 +1,9 @@
 <template>
   <router-link :to="`/visits/${visit.id}`" class="visit-card glass-light">
     <div class="card-top">
-      <div class="card-time">
+      <div class="card-date">
         <span class="material-symbols-rounded time-icon">schedule</span>
-        <span class="time-text">{{ visit.time }} — {{ visit.timeEnd }}</span>
+        <span class="time-text">{{ displayDate }}</span>
       </div>
       <div class="card-status" :style="{ color: statusColor, background: statusColor + '15' }">
         {{ statusLabel }}
@@ -13,23 +13,29 @@
     <div class="card-body">
       <h4 class="card-title">{{ visit.title }}</h4>
       <div class="card-meta">
-        <div class="meta-row">
-          <span class="material-symbols-rounded meta-icon">person</span>
-          <span class="meta-text">{{ visit.client }} <span class="meta-role">• {{ visit.clientRole }}</span></span>
+        <div v-if="visit.stage_name" class="meta-row">
+          <span class="material-symbols-rounded meta-icon">flag</span>
+          <span class="meta-text">{{ visit.stage_name }}</span>
         </div>
-        <div class="meta-row">
-          <span class="material-symbols-rounded meta-icon">location_on</span>
-          <span class="meta-text">{{ visit.address }}</span>
+        <div v-if="visit.opportunity" class="meta-row">
+          <span class="material-symbols-rounded meta-icon">payments</span>
+          <span class="meta-text meta-amount">{{ formatAmount(visit.opportunity) }} {{ visit.currency || '₽' }}</span>
+        </div>
+        <div v-if="visit.comments" class="meta-row">
+          <span class="material-symbols-rounded meta-icon">chat</span>
+          <span class="meta-text meta-comment">{{ truncate(visit.comments, 60) }}</span>
         </div>
       </div>
     </div>
 
     <div class="card-footer">
-      <div class="card-type" :style="{ color: typeColor }">
-        <span class="material-symbols-rounded type-icon">{{ typeIcon }}</span>
-        <span class="type-label">{{ typeLabel }}</span>
+      <div class="card-info">
+        <span class="material-symbols-rounded footer-icon">event</span>
+        <span class="footer-text">{{ visit.visit_date ? formatVisitDate(visit.visit_date) : (visit.date || '—') }}</span>
       </div>
-      <span v-if="visit.orderAmount" class="card-amount">{{ formatCurrency(visit.orderAmount) }}</span>
+      <div v-if="visit.geo_set" class="card-geo">
+        <span class="material-symbols-rounded footer-icon" style="color: var(--color-success)">location_on</span>
+      </div>
       <span class="material-symbols-rounded card-arrow">chevron_right</span>
     </div>
   </router-link>
@@ -37,25 +43,75 @@
 
 <script setup>
 import { computed } from 'vue'
-import { getStatusLabel, getStatusColor, getVisitTypeLabel, getVisitTypeIcon, formatCurrency } from '../data/mock'
 
 const props = defineProps({
   visit: { type: Object, required: true }
 })
 
-const statusLabel = computed(() => getStatusLabel(props.visit.status))
-const statusColor = computed(() => getStatusColor(props.visit.status))
-const typeLabel = computed(() => getVisitTypeLabel(props.visit.type))
-const typeIcon = computed(() => getVisitTypeIcon(props.visit.type))
-const typeColor = computed(() => {
-  const colors = {
-    order: 'var(--color-accent)',
-    presentation: 'var(--color-primary)',
-    consultation: 'var(--color-warning)',
-    new_client: '#A78BFA'
+// Карта стадий → цвет (можно дополнить при необходимости)
+const stageColors = {
+  NEW: '#4DA6FF',
+  PREPARATION: '#FFB020',
+  PREPAYMENT_INVOICE: '#A78BFA',
+  EXECUTING: '#FF6B35',
+  FINAL_INVOICE: '#F59E0B',
+  WON: '#00C48C',
+  LOSE: '#FF4D6A',
+  APOLOGY: '#94A3B8',
+}
+
+function getStageColor(stageId) {
+  if (!stageId) return '#94A3B8'
+  // C7:NEW → NEW
+  const short = stageId.includes(':') ? stageId.split(':')[1] : stageId
+  return stageColors[short] || '#4DA6FF'
+}
+
+const statusLabel = computed(() => props.visit.stage_name || props.visit.stage_id || '—')
+const statusColor = computed(() => getStageColor(props.visit.stage_id))
+
+const displayDate = computed(() => {
+  const src = props.visit.visit_date || props.visit.date
+  if (!src) return '—'
+  try {
+    const d = new Date(src)
+    if (isNaN(d)) return src
+    // Если есть время (не 00:00)
+    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0
+    if (hasTime) {
+      return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    }
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+  } catch {
+    return src
   }
-  return colors[props.visit.type] || 'var(--color-text-secondary)'
 })
+
+function formatVisitDate(iso) {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    if (isNaN(d)) return iso
+    return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return iso
+  }
+}
+
+function formatAmount(val) {
+  if (!val) return ''
+  return Number(val).toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+}
+
+function stripBBCode(str) {
+  if (!str) return ''
+  return str.replace(/\[\/?\w+(?:=[^\]]+)?\]/g, '').trim()
+}
+
+function truncate(str, len) {
+  const clean = stripBBCode(str)
+  return clean.length > len ? clean.slice(0, len) + '…' : clean
+}
 </script>
 
 <style scoped>
@@ -81,7 +137,7 @@ const typeColor = computed(() => {
   align-items: center;
 }
 
-.card-time {
+.card-date {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -103,6 +159,10 @@ const typeColor = computed(() => {
   padding: 3px 8px;
   border-radius: var(--radius-full);
   letter-spacing: 0.2px;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-body {
@@ -141,9 +201,14 @@ const typeColor = computed(() => {
   line-height: var(--line-height-normal);
 }
 
-.meta-role {
-  color: var(--color-text-tertiary);
-  opacity: 0.7;
+.meta-amount {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+
+.meta-comment {
+  font-style: italic;
+  opacity: 0.8;
 }
 
 .card-footer {
@@ -154,32 +219,30 @@ const typeColor = computed(() => {
   border-top: 1px solid var(--color-border);
 }
 
-.card-type {
+.card-info {
   display: flex;
   align-items: center;
   gap: 4px;
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
 }
 
-.type-icon {
+.footer-icon {
   font-size: 16px;
 }
 
-.card-amount {
-  margin-left: auto;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-accent);
+.footer-text {
+  font-weight: var(--font-weight-medium);
+}
+
+.card-geo {
+  display: flex;
+  align-items: center;
 }
 
 .card-arrow {
   font-size: 18px;
   color: var(--color-text-tertiary);
   margin-left: auto;
-}
-
-.card-amount + .card-arrow {
-  margin-left: 0;
 }
 </style>

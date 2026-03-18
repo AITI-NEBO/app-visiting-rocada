@@ -2,166 +2,165 @@
   <div class="deal-page">
     <AppHeader :title="visit?.title || 'Визит'" :showBack="true" />
 
+    <!-- Loading -->
+    <div v-if="!visit" class="loading-state">
+      <span class="material-symbols-rounded spin" style="font-size:32px; color: var(--color-primary)">progress_activity</span>
+    </div>
+
     <div v-if="visit" class="page-content">
       <!-- Status hero -->
       <div class="deal-hero animate-fade-in-up">
         <div class="hero-status" :style="{ background: statusBg }">
           <span class="hero-status-dot" :style="{ background: statusColor }"></span>
-          <span class="hero-status-text" :style="{ color: statusColor }">{{ statusLabel }}</span>
+          <span class="hero-status-text" :style="{ color: statusColor }">{{ visit.stage_name || visit.stage_id }}</span>
         </div>
         <h2 class="hero-title">{{ visit.title }}</h2>
         <div class="hero-meta">
-          <span class="hero-type" :style="{ color: typeColor }">
-            <span class="material-symbols-rounded" style="font-size:16px">{{ typeIcon }}</span>
-            {{ typeLabel }}
-          </span>
-          <span class="hero-time">
+          <span v-if="visit.visit_date" class="hero-info">
             <span class="material-symbols-rounded" style="font-size:16px">schedule</span>
-            {{ visit.time }} — {{ visit.timeEnd }}
+            {{ formatDateTime(visit.visit_date) }}
+          </span>
+          <span v-else-if="visit.date" class="hero-info">
+            <span class="material-symbols-rounded" style="font-size:16px">event</span>
+            {{ formatDate(visit.date) }}
+          </span>
+          <span v-if="visit.close_date" class="hero-info">
+            <span class="material-symbols-rounded" style="font-size:16px">event_available</span>
+            до {{ formatDate(visit.close_date) }}
           </span>
         </div>
       </div>
 
-      <!-- Info Reason -->
-      <div v-if="visit.infoReason" class="info-reason-section animate-fade-in-up" style="animation-delay: 80ms">
-        <div class="info-reason-card">
-          <span class="material-symbols-rounded info-reason-icon">campaign</span>
-          <div class="info-reason-content">
-            <span class="info-reason-label">Инфоповод</span>
-            <p class="info-reason-text">{{ visit.infoReason }}</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- LPR (Decision Maker) -->
-      <div v-if="visit.lpr" class="lpr-section animate-fade-in-up" style="animation-delay: 100ms">
-        <h3 class="section-title">
-          <span class="material-symbols-rounded section-icon">person</span>
-          ЛПР (лицо, принимающее решение)
-        </h3>
-        <div class="lpr-card">
-          <div class="lpr-avatar">
-            <span>{{ visit.lpr.name[0] }}</span>
-          </div>
-          <div class="lpr-info">
-            <span class="lpr-name">{{ visit.lpr.name }}</span>
-            <span class="lpr-role">{{ visit.lpr.role }}</span>
-          </div>
-        </div>
-        <div class="lpr-contacts">
-          <a :href="'tel:' + visit.lpr.phone" class="lpr-contact-item">
-            <span class="material-symbols-rounded lpr-contact-icon" style="color: var(--color-success)">phone</span>
-            <span>{{ visit.lpr.phone }}</span>
-          </a>
-          <a v-if="visit.lpr.email" :href="'mailto:' + visit.lpr.email" class="lpr-contact-item">
-            <span class="material-symbols-rounded lpr-contact-icon" style="color: var(--color-primary)">email</span>
-            <span>{{ visit.lpr.email }}</span>
-          </a>
-          <div v-if="visit.lpr.telegram" class="lpr-contact-item">
-            <span class="material-symbols-rounded lpr-contact-icon" style="color: #229ED9">chat</span>
-            <span>{{ visit.lpr.telegram }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Address -->
-      <div class="info-section animate-fade-in-up" style="animation-delay: 120ms">
-        <div class="info-card">
-          <div class="info-card-icon" style="background: rgba(0, 102, 255, 0.12)">
-            <span class="material-symbols-rounded" style="color: var(--color-primary)">location_on</span>
+      <!-- Deal info cards -->
+      <div class="info-grid animate-fade-in-up" style="animation-delay: 80ms">
+        <div v-if="visit.opportunity" class="info-card">
+          <div class="info-card-icon" style="background: rgba(0, 196, 140, 0.12)">
+            <span class="material-symbols-rounded" style="color: var(--color-success)">payments</span>
           </div>
           <div class="info-card-content">
-            <span class="info-card-label">Адрес</span>
-            <span class="info-card-value">{{ visit.address }}</span>
+            <span class="info-card-label">Сумма</span>
+            <span class="info-card-value">{{ formatAmount(visit.opportunity) }} {{ visit.currency || '₽' }}</span>
+          </div>
+        </div>
+
+        <div v-if="visit.date_create" class="info-card">
+          <div class="info-card-icon" style="background: rgba(0, 102, 255, 0.12)">
+            <span class="material-symbols-rounded" style="color: var(--color-primary)">calendar_today</span>
+          </div>
+          <div class="info-card-content">
+            <span class="info-card-label">Создана</span>
+            <span class="info-card-value">{{ formatDate(visit.date_create) }}</span>
+          </div>
+        </div>
+
+        <div v-if="visit.geo_set" class="info-card">
+          <div class="info-card-icon" style="background: rgba(0, 196, 140, 0.12)">
+            <span class="material-symbols-rounded" style="color: var(--color-success)">location_on</span>
+          </div>
+          <div class="info-card-content">
+            <span class="info-card-label">Геолокация</span>
+            <span class="info-card-value">{{ visit.lat?.toFixed(4) }}, {{ visit.lng?.toFixed(4) }}</span>
           </div>
         </div>
       </div>
 
-      <!-- Description -->
-      <div class="description-section animate-fade-in-up" style="animation-delay: 150ms">
+      <!-- Company -->
+      <div v-if="company" class="section animate-fade-in-up" style="animation-delay: 100ms">
         <h3 class="section-title">
-          <span class="material-symbols-rounded section-icon">description</span>
-          Описание визита
+          <span class="material-symbols-rounded section-icon">business</span>
+          Компания
         </h3>
-        <p class="description-text">{{ visit.description }}</p>
+        <router-link
+          :to="company.id ? `/company/${company.id}` : '#'"
+          class="detail-card detail-card-link"
+        >
+          <div class="detail-row">
+            <span class="detail-label">Название</span>
+            <span class="detail-value">{{ company.title }}</span>
+          </div>
+          <div v-if="company.phone" class="detail-row">
+            <span class="detail-label">Телефон</span>
+            <span class="detail-value" style="color:var(--color-primary)">{{ company.phone }}</span>
+          </div>
+          <div v-if="company.address" class="detail-row">
+            <span class="detail-label">Адрес</span>
+            <span class="detail-value">{{ company.address }}</span>
+          </div>
+          <div v-if="company.id" class="detail-row" style="justify-content:flex-end">
+            <span style="font-size:12px;color:var(--color-primary);display:flex;align-items:center;gap:4px">
+              <span class="material-symbols-rounded" style="font-size:16px">open_in_new</span>
+              Открыть карточку
+            </span>
+          </div>
+        </router-link>
       </div>
 
-      <!-- Products -->
-      <div v-if="visit.products && visit.products.length" class="products-section animate-fade-in-up" style="animation-delay: 180ms">
+      <!-- Contact -->
+      <div v-if="contact" class="section animate-fade-in-up" style="animation-delay: 120ms">
         <h3 class="section-title">
-          <span class="material-symbols-rounded section-icon">inventory_2</span>
-          Товары
+          <span class="material-symbols-rounded section-icon">person</span>
+          Контакт
         </h3>
-        <div class="products-list">
-          <div class="product-item" v-for="(product, i) in visit.products" :key="i">
-            <div class="product-info">
-              <span class="material-symbols-rounded product-icon">package_2</span>
-              <span class="product-name">{{ product.name }}</span>
-            </div>
-            <span class="product-price">{{ visit.isApproximate ? '≈ ' : '' }}{{ formatCurrency(product.price) }}</span>
+        <router-link
+          :to="contact.id ? `/contact/${contact.id}` : '#'"
+          class="detail-card detail-card-link"
+        >
+          <div class="detail-row">
+            <span class="detail-label">ФИО</span>
+            <span class="detail-value">{{ contact.fullName }}</span>
           </div>
-        </div>
-        <div v-if="visit.orderAmount" class="order-total">
-          <span class="order-total-label">{{ visit.isApproximate ? 'Примерная сумма' : 'Сумма заказа' }}</span>
-          <span class="order-total-value">{{ visit.isApproximate ? '≈ ' : '' }}{{ formatCurrency(visit.orderAmount) }}</span>
-        </div>
-      </div>
-
-      <!-- Visit Result (if completed) -->
-      <div v-if="visit.result" class="result-section animate-fade-in-up" style="animation-delay: 200ms">
-        <h3 class="section-title">
-          <span class="material-symbols-rounded section-icon">assignment_turned_in</span>
-          Итог визита
-        </h3>
-        <div class="result-card">
-          <div class="result-status-badge" :style="{ color: resultStatusColor }">
-            <span class="material-symbols-rounded" style="font-size: 18px">{{ resultStatusIcon }}</span>
-            {{ resultStatusLabel }}
+          <div v-if="contact.position" class="detail-row">
+            <span class="detail-label">Должность</span>
+            <span class="detail-value">{{ contact.position }}</span>
           </div>
-          <p class="result-text">{{ visit.result.text }}</p>
-          <span class="result-time">{{ visit.result.completedAt }}</span>
-        </div>
-      </div>
-
-      <!-- Geo status -->
-      <div v-if="visit.geoSent" class="map-section animate-fade-in-up" style="animation-delay: 220ms">
-        <h3 class="section-title">
-          <span class="material-symbols-rounded section-icon">map</span>
-          Геолокация подтверждена
-        </h3>
-        <div class="map-preview">
-          <div class="map-placeholder">
-            <span class="material-symbols-rounded map-pin">check_circle</span>
-            <div class="map-coords">
-              <span>{{ visit.geoLat?.toFixed(4) }}, {{ visit.geoLng?.toFixed(4) }}</span>
-            </div>
+          <div v-if="contact.phone" class="detail-row">
+            <span class="detail-label">Телефон</span>
+            <span class="detail-value" style="color:var(--color-primary)">{{ contact.phone }}</span>
           </div>
-        </div>
+          <div v-if="contact.id" class="detail-row" style="justify-content:flex-end">
+            <span style="font-size:12px;color:var(--color-primary);display:flex;align-items:center;gap:4px">
+              <span class="material-symbols-rounded" style="font-size:16px">open_in_new</span>
+              Открыть карточку
+            </span>
+          </div>
+        </router-link>
       </div>
 
       <!-- Comments -->
-      <div v-if="visit.comments.length" class="comments-section animate-fade-in-up" style="animation-delay: 250ms">
+      <div v-if="visit.comments" class="section animate-fade-in-up" style="animation-delay: 140ms">
         <h3 class="section-title">
           <span class="material-symbols-rounded section-icon">chat</span>
-          Комментарии ({{ visit.comments.length }})
+          Комментарий
         </h3>
-        <div class="comment-item" v-for="(comment, i) in visit.comments" :key="i">
-          <div class="comment-avatar"><span>{{ comment.author[0] }}</span></div>
-          <div class="comment-body">
-            <div class="comment-header">
-              <span class="comment-author">{{ comment.author }}</span>
-              <span class="comment-date">{{ comment.time }}</span>
+        <div class="detail-card">
+          <div class="comment-text bbcode" v-html="parseBBCode(visit.comments)"></div>
+        </div>
+      </div>
+
+      <!-- Products -->
+      <div v-if="products.length" class="section animate-fade-in-up" style="animation-delay: 160ms">
+        <h3 class="section-title">
+          <span class="material-symbols-rounded section-icon">inventory_2</span>
+          Товары ({{ products.length }})
+        </h3>
+        <div class="products-list">
+          <div class="product-item" v-for="p in products" :key="p.id">
+            <div class="product-info">
+              <span class="material-symbols-rounded product-icon">package_2</span>
+              <span class="product-name">{{ p.name }}</span>
             </div>
-            <p class="comment-text">{{ comment.text }}</p>
+            <div class="product-right">
+              <span class="product-qty">{{ p.quantity }} шт.</span>
+              <span class="product-price">{{ formatAmount(p.sum) }} ₽</span>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Actions -->
-      <div class="actions-section animate-fade-in-up" style="animation-delay: 300ms">
-        <!-- Complete visit button -->
+      <div class="actions-section animate-fade-in-up" style="animation-delay: 200ms">
         <router-link
-          v-if="visit.status !== 'completed' && !visit.result"
+          v-if="!visit.stage_id?.includes('WON')"
           :to="`/visits/${visit.id}/result`"
           class="action-btn action-complete"
         >
@@ -174,9 +173,9 @@
           Написать комментарий
         </router-link>
 
-        <a :href="'tel:' + visit.lpr?.phone" v-if="visit.lpr?.phone" class="action-btn action-call">
+        <a :href="'tel:' + contact?.phone" v-if="contact?.phone" class="action-btn action-call">
           <span class="material-symbols-rounded action-btn-icon">phone</span>
-          Позвонить ЛПР
+          Позвонить контакту
         </a>
       </div>
     </div>
@@ -184,261 +183,385 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
-import { visits, visitsTomorrow, getStatusLabel, getStatusColor, getVisitTypeLabel, getVisitTypeIcon, getResultStatusLabel, resultStatusOptions, formatCurrency } from '../data/mock'
+import { useVisits } from '../composables/useVisits'
+import { parseBBCode } from '../data/utils'
 
 const route = useRoute()
-const allVisits = [...visits, ...visitsTomorrow]
-const visit = computed(() => allVisits.find(v => v.id === Number(route.params.id)))
+const { findVisit, loadVisits, loadVisitDetail } = useVisits()
 
-const statusLabel = computed(() => visit.value ? getStatusLabel(visit.value.status) : '')
-const statusColor = computed(() => visit.value ? getStatusColor(visit.value.status) : '')
-const statusBg = computed(() => {
-  if (!visit.value) return ''
-  const map = {
-    completed: 'rgba(0, 196, 140, 0.1)',
-    in_progress: 'rgba(255, 176, 32, 0.1)',
-    planned: 'rgba(77, 166, 255, 0.1)'
+const visit = ref(null)
+const company = ref(null)
+const contact = ref(null)
+const products = ref([])
+
+onMounted(async () => {
+  await loadVisits()
+  visit.value = findVisit(route.params.id)
+
+  try {
+    const detail = await loadVisitDetail(route.params.id)
+    if (detail?.deal) {
+      visit.value = { ...(visit.value || {}), ...detail.deal }
+    }
+    company.value = detail?.company || null
+    contact.value = detail?.contact || null
+    products.value = detail?.products || []
+  } catch (e) {
+    console.warn('[DealDetail] Could not load details:', e)
   }
-  return map[visit.value.status] || 'rgba(0,0,0,0.05)'
 })
 
-const typeLabel = computed(() => visit.value ? getVisitTypeLabel(visit.value.type) : '')
-const typeIcon = computed(() => visit.value ? getVisitTypeIcon(visit.value.type) : '')
-const typeColor = computed(() => {
-  if (!visit.value) return ''
-  const colors = { order: 'var(--color-accent)', presentation: 'var(--color-primary)', consultation: 'var(--color-warning)', new_client: '#A78BFA' }
-  return colors[visit.value.type] || 'var(--color-text-secondary)'
-})
+// Stage color
+function getStageColor(stageId) {
+  if (!stageId) return '#94A3B8'
+  const short = stageId.includes(':') ? stageId.split(':')[1] : stageId
+  const map = { NEW: '#4DA6FF', PREPARATION: '#FFB020', PREPAYMENT_INVOICE: '#A78BFA', EXECUTING: '#FF6B35', WON: '#00C48C', LOSE: '#FF4D6A' }
+  return map[short] || '#4DA6FF'
+}
 
-const resultStatusLabel = computed(() => visit.value?.result ? getResultStatusLabel(visit.value.result.status) : '')
-const resultStatusColor = computed(() => {
-  if (!visit.value?.result) return ''
-  const opt = resultStatusOptions.find(o => o.value === visit.value.result.status)
-  return opt?.color || 'var(--color-text-secondary)'
-})
-const resultStatusIcon = computed(() => {
-  if (!visit.value?.result) return ''
-  const opt = resultStatusOptions.find(o => o.value === visit.value.result.status)
-  return opt?.icon || 'check'
-})
+const statusColor = computed(() => visit.value ? getStageColor(visit.value.stage_id) : '')
+const statusBg = computed(() => visit.value ? statusColor.value + '15' : '')
+
+function formatDate(d) {
+  if (!d) return ''
+  try {
+    return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+  } catch { return d }
+}
+
+function formatDateTime(d) {
+  if (!d) return ''
+  try {
+    const dt = new Date(d)
+    if (isNaN(dt)) return d
+    return dt.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch { return d }
+}
+
+function formatAmount(val) {
+  if (!val) return '0'
+  return Number(val).toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+}
 </script>
 
 <style scoped>
-.deal-page { display: flex; flex-direction: column; min-height: 100dvh; }
-
-.page-content {
-  flex: 1; padding: var(--space-base);
-  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + var(--space-xl));
-  display: flex; flex-direction: column; gap: var(--space-lg);
+.deal-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
 }
 
-@media (min-width: 768px) {
-  .page-content { padding: var(--space-xl); padding-bottom: var(--space-xl); }
+.loading-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; }
+
+.page-content {
+  flex: 1;
+  padding: var(--space-base);
+  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + var(--space-xl));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-base);
 }
 
 /* Hero */
-.deal-hero { text-align: center; padding: var(--space-lg) 0; }
-
-.hero-status {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: var(--radius-full); margin-bottom: var(--space-md);
+.deal-hero {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
 }
 
-.hero-status-dot { width: 8px; height: 8px; border-radius: 50%; }
-.hero-status-text { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+.hero-status {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+}
+
+.hero-status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+.hero-status-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
 
 .hero-title {
-  font-size: var(--font-size-xl); font-weight: var(--font-weight-bold);
-  line-height: var(--line-height-tight); margin-bottom: var(--space-sm);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
 }
 
 .hero-meta {
-  display: flex; align-items: center; justify-content: center; gap: var(--space-base);
-  color: var(--color-text-secondary); font-size: var(--font-size-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-base);
 }
 
-.hero-type { display: flex; align-items: center; gap: 4px; font-weight: var(--font-weight-medium); }
-.hero-time { display: flex; align-items: center; gap: 4px; }
-
-/* Info Reason */
-.info-reason-card {
-  display: flex; gap: var(--space-md); padding: var(--space-base);
-  background: linear-gradient(135deg, rgba(255, 176, 32, 0.08), rgba(255, 176, 32, 0.03));
-  border-radius: var(--radius-lg); border: 1px solid rgba(255, 176, 32, 0.2);
+.hero-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
-.info-reason-icon { font-size: 24px; color: var(--color-warning); flex-shrink: 0; margin-top: 2px; }
-.info-reason-content { display: flex; flex-direction: column; gap: 4px; }
-.info-reason-label { font-size: var(--font-size-xs); color: var(--color-warning); font-weight: var(--font-weight-semibold); text-transform: uppercase; letter-spacing: 0.5px; }
-.info-reason-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: var(--line-height-relaxed); }
-
-/* LPR */
-.lpr-card {
-  display: flex; align-items: center; gap: var(--space-md);
-  padding: var(--space-base); background: var(--color-bg-card);
-  border-radius: var(--radius-lg); border: 1px solid var(--color-border);
-  margin-bottom: var(--space-md); box-shadow: var(--shadow-sm);
+/* Info grid */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-md);
 }
 
-.lpr-avatar {
-  width: 44px; height: 44px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  display: flex; align-items: center; justify-content: center;
-  font-size: var(--font-size-md); font-weight: var(--font-weight-bold); color: white;
-  flex-shrink: 0;
-}
-
-.lpr-info { display: flex; flex-direction: column; gap: 2px; }
-.lpr-name { font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); }
-.lpr-role { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
-
-.lpr-contacts { display: flex; flex-direction: column; gap: var(--space-sm); }
-
-.lpr-contact-item {
-  display: flex; align-items: center; gap: var(--space-sm);
-  padding: var(--space-md) var(--space-base);
-  background: var(--color-bg-card); border-radius: var(--radius-md);
-  border: 1px solid var(--color-border); font-size: var(--font-size-sm);
-  color: var(--color-text-primary); text-decoration: none;
-  transition: background var(--transition-fast);
-}
-
-.lpr-contact-item:active { background: var(--color-bg-card-hover); }
-.lpr-contact-icon { font-size: 20px; flex-shrink: 0; }
-
-/* Info cards */
 .info-card {
-  display: flex; align-items: center; gap: var(--space-md);
-  padding: var(--space-base); background: var(--color-bg-card);
-  border-radius: var(--radius-lg); border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-base);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
 }
 
 .info-card-icon {
-  width: 44px; height: 44px; border-radius: var(--radius-md);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 40px; height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.info-card-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.info-card-label { font-size: var(--font-size-xs); color: var(--color-text-tertiary); font-weight: var(--font-weight-medium); text-transform: uppercase; letter-spacing: 0.5px; }
-.info-card-value { font-size: var(--font-size-base); font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 
-/* Description */
+.info-card-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+.info-card-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+/* Sections */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
 .section-title {
-  display: flex; align-items: center; gap: var(--space-sm);
-  font-size: var(--font-size-md); font-weight: var(--font-weight-semibold);
-  margin-bottom: var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
 }
 
-.section-icon { font-size: 20px; color: var(--color-text-tertiary); }
+.section-icon {
+  font-size: 20px;
+  color: var(--color-primary);
+}
 
-.description-text {
-  font-size: var(--font-size-base); color: var(--color-text-secondary);
-  line-height: var(--line-height-relaxed); padding: var(--space-base);
-  background: var(--color-bg-card); border-radius: var(--radius-md);
-  border: 1px solid var(--color-border); box-shadow: var(--shadow-sm);
+.detail-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-base);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-base);
+}
+
+.detail-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.detail-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  text-align: right;
+}
+
+.detail-link {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary);
+  text-decoration: none;
+  text-align: right;
+}
+
+.comment-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}
+
+.bbcode :deep(a) {
+  color: var(--color-primary);
+  word-break: break-all;
+}
+
+.bbcode :deep(strong) {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.bbcode :deep(p) {
+  margin: 4px 0;
+}
+
+.bbcode :deep(blockquote) {
+  border-left: 3px solid var(--color-primary);
+  padding: 4px 12px;
+  margin: 4px 0;
+  color: var(--color-text-secondary);
+}
+
+.bbcode :deep(img) {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
+.bbcode :deep(code) {
+  background: var(--color-bg-elevated);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
 }
 
 /* Products */
-.products-list { display: flex; flex-direction: column; gap: var(--space-sm); }
+.products-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
 
 .product-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: var(--space-md) var(--space-base); background: var(--color-bg-card);
-  border-radius: var(--radius-md); border: 1px solid var(--color-border);
-}
-
-.product-info { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; flex: 1; }
-.product-icon { font-size: 20px; color: var(--color-accent); flex-shrink: 0; }
-.product-name { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.product-price { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); flex-shrink: 0; margin-left: var(--space-sm); }
-
-.order-total {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: var(--space-md); padding: var(--space-base);
-  background: linear-gradient(135deg, rgba(0, 212, 170, 0.08), rgba(0, 102, 255, 0.08));
-  border-radius: var(--radius-md); border: 1px solid rgba(0, 212, 170, 0.2);
-}
-
-.order-total-label { font-size: var(--font-size-sm); color: var(--color-text-secondary); font-weight: var(--font-weight-medium); }
-.order-total-value { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); color: var(--color-accent); }
-
-/* Result */
-.result-card {
-  padding: var(--space-base); background: var(--color-bg-card);
-  border-radius: var(--radius-lg); border: 1px solid var(--color-border);
-  display: flex; flex-direction: column; gap: var(--space-sm);
-  box-shadow: var(--shadow-sm);
-}
-
-.result-status-badge {
-  display: flex; align-items: center; gap: 6px;
-  font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);
-}
-
-.result-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: var(--line-height-relaxed); }
-.result-time { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
-
-/* Map */
-.map-preview { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--color-border); }
-
-.map-placeholder {
-  height: 100px; background: linear-gradient(135deg, rgba(0, 196, 140, 0.08), rgba(0, 102, 255, 0.08));
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-xs);
-}
-
-.map-pin { font-size: 32px; color: var(--color-success); }
-.map-coords { font-size: var(--font-size-sm); color: var(--color-text-secondary); font-weight: var(--font-weight-medium); }
-
-/* Comments */
-.comment-item {
-  display: flex; gap: var(--space-md); padding: var(--space-base);
-  background: var(--color-bg-card); border-radius: var(--radius-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-base);
+  background: var(--color-bg-card);
   border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
-.comment-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  display: flex; align-items: center; justify-content: center;
-  font-size: var(--font-size-sm); font-weight: var(--font-weight-bold);
-  color: white; flex-shrink: 0;
+.product-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
 }
 
-.comment-body { flex: 1; min-width: 0; }
-.comment-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
-.comment-author { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
-.comment-date { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
-.comment-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: var(--line-height-normal); }
+.product-icon {
+  font-size: 18px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.product-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-shrink: 0;
+}
+
+.product-qty {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+.product-price {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-accent);
+}
 
 /* Actions */
-.actions-section { display: flex; flex-direction: column; gap: var(--space-md); }
-
-.action-btn {
-  display: flex; align-items: center; justify-content: center; gap: var(--space-sm);
-  padding: var(--space-base); border-radius: var(--radius-lg);
-  font-size: var(--font-size-base); font-weight: var(--font-weight-semibold);
-  text-decoration: none; transition: transform var(--transition-fast);
+.actions-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-base);
 }
 
-.action-btn:active { transform: scale(0.97); }
-.action-btn-icon { font-size: 22px; }
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-base);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  transition: all var(--transition-base);
+}
 
 .action-complete {
-  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
-  color: white; box-shadow: var(--shadow-glow-accent);
+  background: linear-gradient(135deg, var(--color-success), #00a06a);
+  color: white;
 }
 
 .action-comment {
-  background: var(--color-bg-card); color: var(--color-text-primary);
+  background: var(--color-bg-card);
   border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
 }
 
 .action-call {
-  background: rgba(0, 196, 140, 0.08); color: var(--color-success);
-  border: 1px solid rgba(0, 196, 140, 0.2);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
 }
+
+.action-btn-icon {
+  font-size: 20px;
+}
+.detail-card-link { display: block; text-decoration: none; color: inherit; cursor: pointer; }
+.detail-card-link:hover .detail-value { color: var(--color-primary); }
 </style>

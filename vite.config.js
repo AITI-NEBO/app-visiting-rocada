@@ -35,6 +35,34 @@ export default defineConfig({
   ],
   server: {
     host: true,
-    port: 5173
+    port: 5173,
+    proxy: {
+      // Наш модуль API (для визитов, данных CRM и т.д.)
+      '/b24api': {
+        target: 'https://office.rocadatech.ru',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => {
+          const [pathname, qs] = path.split('?')
+          const route = pathname.replace(/^\/b24api\/?/, '')
+          const query = qs ? `route=${route}&${qs}` : `route=${route}`
+          return `/local/modules/rocada.visits/lib/router.php?${query}`
+        }
+      },
+      // OAuth2 token exchange → центральный сервер Битрикс (НЕ портал!)
+      '/b24oauth': {
+        target: 'https://oauth.bitrix.info',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/b24oauth/, '/oauth')
+      },
+      // REST API Битрикс24 — для получения профиля пользователя
+      '/b24rest': {
+        target: 'https://office.rocadatech.ru',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/b24rest/, '/rest')
+      }
+    }
   }
 })

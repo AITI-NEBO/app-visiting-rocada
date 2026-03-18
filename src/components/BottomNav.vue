@@ -17,19 +17,19 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { visits } from '../data/mock'
+import { useVisits } from '../composables/useVisits'
 
 const route = useRoute()
+const { todayCount } = useVisits()
 
-const pendingCount = visits.filter(v => v.status !== 'completed').length
-
-const navItems = [
+const navItems = computed(() => [
   { to: '/', icon: 'home', label: 'Главная', exact: true },
-  { to: '/visits', icon: 'assignment', label: 'Визиты', badge: pendingCount },
+  { to: '/visits', icon: 'assignment', label: 'Визиты', badge: todayCount.value || null },
   { to: '/map', icon: 'map', label: 'Карта' },
   { to: '/profile', icon: 'person', label: 'Профиль' }
-]
+])
 
 function isActive(item) {
   if (item.exact) return route.path === item.to
