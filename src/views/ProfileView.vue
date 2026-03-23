@@ -100,7 +100,7 @@
           Настройки
         </h3>
         <div class="settings-list">
-          <div class="setting-item">
+          <!-- <div class="setting-item">
             <div class="setting-left">
               <span class="material-symbols-rounded setting-icon">notifications</span>
               <span class="setting-label">Уведомления</span>
@@ -108,7 +108,7 @@
             <div class="toggle" :class="{ on: notifyOn }" @click="notifyOn = !notifyOn">
               <div class="toggle-thumb"></div>
             </div>
-          </div>
+          </div> -->
           <div class="setting-item">
             <div class="setting-left">
               <span class="material-symbols-rounded setting-icon">{{ isDarkTheme ? 'dark_mode' : 'light_mode' }}</span>
@@ -130,7 +130,7 @@
               <span class="material-symbols-rounded setting-icon">info</span>
               <span class="setting-label">Версия</span>
             </div>
-            <span class="setting-value">1.0.0</span>
+            <span class="setting-value">beta 1.0.0</span>
           </div>
         </div>
       </div>
