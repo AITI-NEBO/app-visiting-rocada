@@ -14,7 +14,7 @@ function handleConfig(array $params): void
         pwaSendError('Method Not Allowed', 405);
     }
 
-    requireAuth();
+    $userId = (int) requireAuth();
     $mid = $params['moduleId'];
 
     // Направления
@@ -26,6 +26,12 @@ function handleConfig(array $params): void
     if (empty($dirs)) {
         $dirs = [getDirectionConfig('sales', $mid)];
     }
+
+    // Фильтруем направления по allowed_users: пустой список = доступ для всех
+    $dirs = array_values(array_filter($dirs, function($dir) use ($userId) {
+        $allowed = array_map('intval', $dir['allowed_users'] ?? []);
+        return empty($allowed) || in_array($userId, $allowed, true);
+    }));
 
     // Поля карточек
     $dealFields    = json_decode(Option::get($mid, 'pwa_deal_fields',    '[]'), true) ?? [];

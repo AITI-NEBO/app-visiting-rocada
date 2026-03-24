@@ -34,6 +34,12 @@ function requireAuth(): int
     // Проверяем: может быть B24 access_token → валидируем через REST API
     $userId = validateB24Token($token);
     if ($userId) {
+        // Глобальная проверка доступа к PWA (вкладка "Доступ" в настройках)
+        $globalAllowed = json_decode(Option::get('rocada.visits', 'pwa_allowed_users', '[]'), true) ?? [];
+        $globalAllowed = array_map('intval', $globalAllowed);
+        if (!empty($globalAllowed) && !in_array($userId, $globalAllowed, true)) {
+            pwaSendError('Доступ к приложению запрещён', 403);
+        }
         return $userId;
     }
 

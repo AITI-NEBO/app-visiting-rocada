@@ -30,6 +30,13 @@ function visitsList(int $userId, array $params): void
     $perPage = min(50, max(1, (int)($q['per_page'] ?? 20)));
 
     $dirCfg  = getDirectionConfig($dirId, $mid);
+
+    // Проверка доступа к направлению
+    $allowedUsers = array_map('intval', $dirCfg['allowed_users'] ?? []);
+    if (!empty($allowedUsers) && !in_array($userId, $allowedUsers, true)) {
+        pwaSendError('Доступ к данному направлению запрещён', 403);
+    }
+
     $stages  = $period === 'tomorrow'
         ? ($dirCfg['stages_tomorrow'] ?? [])
         : ($dirCfg['stages_today']    ?? []);
@@ -123,6 +130,12 @@ function visitDetail(int $userId, int $dealId, array $params): void
 {
     $mid    = $params['moduleId'];
     $dirCfg = getDirectionConfig($params['get']['direction'] ?? 'sales', $mid);
+
+    // Проверка доступа к направлению
+    $allowedUsers = array_map('intval', $dirCfg['allowed_users'] ?? []);
+    if (!empty($allowedUsers) && !in_array($userId, $allowedUsers, true)) {
+        pwaSendError('Доступ к данному направлению запрещён', 403);
+    }
 
     $deal = DealTable::getList([
         'filter' => ['=ID' => $dealId, '=ASSIGNED_BY_ID' => $userId],
