@@ -37,10 +37,12 @@
               <span class="stat-value" style="color: var(--color-danger)">{{ failCount }}</span>
               <span class="stat-label">Провалено</span>
             </div>
+            <!-- TODO: продажи — временно скрыто
             <div class="stat-item">
               <span class="stat-value" style="color: var(--color-accent)">{{ formatRevenue }}</span>
               <span class="stat-label">Выручка</span>
             </div>
+            -->
           </div>
         </div>
       </section>

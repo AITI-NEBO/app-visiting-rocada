@@ -50,13 +50,18 @@ function visitsList(int $userId, array $params): void
         $filter['CATEGORY_ID'] = $pipelines;
     }
 
-    $select  = array_unique(array_filter([
-        'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID',
-        'COMPANY_ID', 'CONTACT_ID', 'ASSIGNED_BY_ID',
-        'BEGINDATE', 'CLOSEDATE', 'DATE_MODIFY', 'DATE_CREATE',
-        'OPPORTUNITY', 'CURRENCY_ID', 'COMMENTS',
-        $latF, $lngF, $vdF,
-    ]));
+    $dealFields = array_filter($dirCfg['deal_fields'] ?? []);
+
+    $select  = array_unique(array_filter(array_merge(
+        [
+            'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID',
+            'COMPANY_ID', 'CONTACT_ID', 'ASSIGNED_BY_ID',
+            'BEGINDATE', 'CLOSEDATE', 'DATE_MODIFY', 'DATE_CREATE',
+            'OPPORTUNITY', 'CURRENCY_ID', 'COMMENTS',
+            $latF, $lngF, $vdF,
+        ],
+        $dealFields   // доп. UF-поля направления
+    )));
 
     $rows  = DealTable::getList([
         'filter' => $filter,
@@ -152,6 +157,34 @@ function formatDeal(array $d, array $cfg): array
     $rf   = $cfg['lng_field'] ?? '';
     $vdf  = $cfg['visit_date_field'] ?? '';
     $catId = (int)($d['CATEGORY_ID'] ?? 0);
+
+    // Доп. поля направления: собираем значения UF-полей с метками
+    $dealFieldCodes = array_values(array_filter($cfg['deal_fields'] ?? []));
+    $extraFields = [];
+    if (!empty($dealFieldCodes)) {
+        // Получаем метки UF-полей сделки (один раз из Bitrix)
+        static $ufLabels = null;
+        if ($ufLabels === null) {
+            $ufLabels = [];
+            $ufList = \CUserTypeEntity::GetList([], ['ENTITY_ID' => 'CRM_DEAL']);
+            while ($uf = $ufList->Fetch()) {
+                $label = $uf['EDIT_FORM_LABEL'][LANGUAGE_ID]
+                    ?? $uf['LIST_COLUMN_LABEL'][LANGUAGE_ID]
+                    ?? $uf['FIELD_NAME'];
+                $ufLabels[$uf['FIELD_NAME']] = $label;
+            }
+        }
+        foreach ($dealFieldCodes as $code) {
+            if (array_key_exists($code, $d)) {
+                $extraFields[] = [
+                    'code'  => $code,
+                    'label' => $ufLabels[$code] ?? $code,
+                    'value' => is_array($d[$code]) ? implode(', ', $d[$code]) : (string)($d[$code] ?? ''),
+                ];
+            }
+        }
+    }
+
     return [
         'id'          => (int)$d['ID'],
         'title'       => $d['TITLE']      ?? '',
@@ -172,6 +205,8 @@ function formatDeal(array $d, array $cfg): array
         'lat'         => $lf && !empty($d[$lf]) ? (float)$d[$lf] : null,
         'lng'         => $rf && !empty($d[$rf]) ? (float)$d[$rf] : null,
         'geo_set'     => $lf && !empty($d[$lf]),
+        'fields'      => $extraFields,   // доп. поля направления
+        'field_codes' => array_values($dealFieldCodes), // список кодов для фронта
     ];
 }
 

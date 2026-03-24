@@ -183,20 +183,52 @@ function panTo(lat, lng, item) {
 }
 
 function goToMyLocation() {
-  if (!navigator.geolocation) return
+  if (!navigator.geolocation) {
+    showToast('Геолокация не поддерживается браузером')
+    return
+  }
   isLocating.value = true
+  showToast('Определяем местоположение…')
+
+  const applyPos = (pos) => {
+    isLocating.value = false
+    if (mapInstance) {
+      mapInstance.setCenter([pos.coords.latitude, pos.coords.longitude], 15, { duration: 500 })
+    }    
+  }
+
+  const onError = (err) => {
+    // Фаза 2: попробовать без кэша и с высокой точностью
+    if (err.code === 3) {
+      navigator.geolocation.getCurrentPosition(
+        applyPos,
+        (err2) => {
+          isLocating.value = false
+          const msg = err2.code === 1
+            ? 'Нет разрешения на геолокацию (разрешите в браузере)'
+            : err2.code === 2
+            ? 'Местоположение недоступно — включите GPS или Wi-Fi'
+            : 'Не удалось определить местоположение'
+          showToast(msg)
+          console.warn('[MapView] geo error phase2:', err2.code, err2.message)
+        },
+        { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
+      )
+    } else {
+      isLocating.value = false
+      const msg = err.code === 1
+        ? 'Нет разрешения на геолокацию (разрешите в браузере)'
+        : 'Местоположение недоступно — включите GPS или Wi-Fi'
+      showToast(msg)
+      console.warn('[MapView] geo error:', err.code, err.message)
+    }
+  }
+
+  // Фаза 1: взять закэшированную позицию (мгновенно если есть)
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      isLocating.value = false
-      if (mapInstance) {
-        mapInstance.setCenter([pos.coords.latitude, pos.coords.longitude], 15, { duration: 500 })
-      }
-    },
-    () => {
-      isLocating.value = false
-      showToast('Не удалось определить местоположение')
-    },
-    { timeout: 8000 }
+    applyPos,
+    onError,
+    { timeout: 5000, enableHighAccuracy: false, maximumAge: 300000 }
   )
 }
 
@@ -260,7 +292,7 @@ onMounted(async () => {
   await new Promise((resolve) => {
     if (window.ymaps) { resolve(); return }
     const script = document.createElement('script')
-    script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU'
+    script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=99a2f189-c861-4b8a-90e7-34fa2c7add0e'
     script.onload = resolve
     document.head.appendChild(script)
   })

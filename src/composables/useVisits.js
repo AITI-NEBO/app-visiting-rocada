@@ -87,9 +87,12 @@ export function useVisits() {
                 total: data.total || 0,
             }
 
-            // Сохраняем счётчики успешных/провальных
-            if (data.success_count !== undefined) successCount.value = data.success_count
-            if (data.fail_count !== undefined) failCount.value = data.fail_count
+            // Сохраняем счётчики успешных/провальных только из запроса "today"
+            // (запрос "tomorrow" тоже возвращает 0 и обнулял бы значения)
+            if (period === 'today') {
+                if (data.success_count !== undefined) successCount.value = data.success_count
+                if (data.fail_count !== undefined) failCount.value = data.fail_count
+            }
         } catch (e) {
             console.error(`[useVisits] loadNextPage(${period}) error:`, e)
         }

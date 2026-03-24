@@ -157,6 +157,24 @@
         </div>
       </div>
 
+      <!-- Extra deal fields configured in direction -->
+      <div
+        v-if="extraFields.length"
+        class="section animate-fade-in-up"
+        style="animation-delay: 170ms"
+      >
+        <h3 class="section-title">
+          <span class="material-symbols-rounded section-icon">list_alt</span>
+          Доп. поля
+        </h3>
+        <div class="detail-card">
+          <div v-for="f in extraFields" :key="f.code" class="detail-row">
+            <span class="detail-label">{{ f.label }}</span>
+            <span class="detail-value">{{ f.value || '—' }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Actions -->
       <div class="actions-section animate-fade-in-up" style="animation-delay: 200ms">
         <router-link
@@ -213,6 +231,11 @@ onMounted(async () => {
     console.warn('[DealDetail] Could not load details:', e)
   }
 })
+
+// Доп. поля из конфига направления (приходят с бэка как [{code, label, value}])
+const extraFields = computed(() =>
+  (visit.value?.fields || []).filter(f => f.value !== '' && f.value != null)
+)
 
 // Stage color
 function getStageColor(stageId) {

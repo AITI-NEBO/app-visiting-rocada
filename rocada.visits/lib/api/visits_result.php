@@ -8,6 +8,7 @@
  *   "status_id":  "rs_xxx",      // ID статуса из result_statuses направления
  *   "comment":    "...",
  *   "direction":  "dir_xxx",
+ *   "distance_m": 123,           // расстояние в метрах от точки (опционально)
  * }
  */
 
@@ -34,6 +35,9 @@ function handleVisitsResult(array $params): void
     $comment    = trim($body['comment']     ?? '');
     $forceStage = trim($body['new_stage_id'] ?? '');
     $dirId      = trim($body['direction'] ?? ($params['get']['direction'] ?? ''));
+    $distanceM  = isset($body['distance_m']) && is_numeric($body['distance_m'])
+        ? (int)round((float)$body['distance_m'])
+        : null;
 
     if (empty($statusId) && empty($forceStage)) {
         pwaSendError('status_id или new_stage_id обязательны', 422);
@@ -107,6 +111,11 @@ function handleVisitsResult(array $params): void
     $tlText = $statusLabel ? "Результат: $statusLabel" : 'Визит завершён';
     if ($comment) {
         $tlText .= "\n\n$comment";
+    }
+
+    // Дистанция от точки (если передана)
+    if ($distanceM !== null && $distanceM >= 0) {
+        $tlText .= "\n\n📍 Отметился в {$distanceM} м от точки визита";
     }
 
     CommentEntry::create([

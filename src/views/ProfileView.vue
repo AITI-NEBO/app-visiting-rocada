@@ -30,7 +30,7 @@
         </div>
       </div>
 
-      <!-- Statistics -->
+      <!-- TODO: продажи — временно скрыто
       <div class="stats-section animate-fade-in-up" style="animation-delay: 100ms">
         <h3 class="section-title">
           <span class="material-symbols-rounded section-icon">bar_chart</span>
@@ -92,6 +92,7 @@
           </div>
         </div>
       </div>
+      -->
 
       <!-- Settings -->
       <div class="settings-section animate-fade-in-up" style="animation-delay: 200ms">

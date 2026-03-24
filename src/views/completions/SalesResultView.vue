@@ -3,22 +3,46 @@
     <!-- Step 1: Geo -->
     <div v-if="step === 1" class="step-content animate-fade-in-up">
       <div class="geo-visual">
-        <div class="geo-circle" :class="{ locating: isLocating, done: geoDone }">
+        <div class="geo-circle" :class="{ locating: isLocating, done: geoDone && geoLat, error: geoError }">
           <span class="material-symbols-rounded geo-icon">
-            {{ geoDone ? 'check_circle' : isLocating ? 'gps_fixed' : 'my_location' }}
+            {{ geoDone && geoLat ? 'check_circle' : geoError ? 'location_off' : isLocating ? 'gps_fixed' : 'my_location' }}
           </span>
         </div>
-        <p class="geo-text" v-if="!geoDone && !isLocating">Подтвердите местоположение для фиксации визита</p>
+        <p class="geo-text" v-if="!geoDone && !isLocating && !geoError">Подтвердите местоположение для фиксации визита</p>
         <p class="geo-text" v-else-if="isLocating">Определение местоположения…</p>
+        <div v-else-if="geoError" class="geo-error-block">
+          <p class="geo-text geo-err">Не удалось определить местоположение</p>
+          <p class="geo-hint">{{ geoError }}</p>
+        </div>
         <div v-else class="geo-success">
           <p class="geo-text geo-ok">Геолокация подтверждена!</p>
           <span class="geo-coords">{{ geoLat }}, {{ geoLng }}</span>
         </div>
       </div>
-      <button v-if="!geoDone" class="primary-btn" :disabled="isLocating" @click="confirmGeo">
-        <span class="material-symbols-rounded">{{ isLocating ? 'hourglass_top' : 'location_on' }}</span>
-        {{ isLocating ? 'Определение…' : 'Подтвердить геолокацию' }}
-      </button>
+
+      <!-- Buttons: before geo -->
+      <template v-if="!geoDone && !geoError">
+        <button class="primary-btn" :disabled="isLocating" @click="confirmGeo">
+          <span class="material-symbols-rounded">{{ isLocating ? 'hourglass_top' : 'location_on' }}</span>
+          {{ isLocating ? 'Определение…' : 'Подтвердить геолокацию' }}
+        </button>
+        <button class="secondary-btn" @click="skipGeo" style="margin-top:var(--space-sm)">
+          Пропустить
+        </button>
+      </template>
+
+      <!-- Buttons: error -->
+      <template v-else-if="geoError">
+        <button class="primary-btn" @click="confirmGeo">
+          <span class="material-symbols-rounded">refresh</span>
+          Повторить
+        </button>
+        <button class="secondary-btn" @click="skipGeo" style="margin-top:var(--space-sm)">
+          Пропустить и продолжить
+        </button>
+      </template>
+
+      <!-- Button: success -->
       <button v-else class="primary-btn" @click="step = 2">
         <span class="material-symbols-rounded">arrow_forward</span>
         Далее
@@ -117,18 +141,31 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
+import { useVisits } from '../../composables/useVisits'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
 const route       = useRoute()
 const api         = useApi()
 const { currentDirection } = useDirections()
+const { findVisit, loadVisits } = useVisits()
+
+// Расчёт расстояния по формуле Haversine (возвращает метры)
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000 // радиус Земли в метрах
+  const toRad = d => d * Math.PI / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2
+  return Math.round(R * 2 * Math.asin(Math.sqrt(a)))
+}
 
 const step          = ref(1)
 const isLocating    = ref(false)
 const geoDone       = ref(false)
 const geoLat        = ref('')
 const geoLng        = ref('')
+const geoError      = ref('')
 
 const statuses      = ref([])
 const loadingStatuses = ref(true)
@@ -159,21 +196,36 @@ onMounted(async () => {
 
 function confirmGeo() {
   isLocating.value = true
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        geoLat.value = pos.coords.latitude.toFixed(6)
-        geoLng.value = pos.coords.longitude.toFixed(6)
-        isLocating.value = false
-        geoDone.value = true
-      },
-      () => { isLocating.value = false; geoDone.value = true },
-      { timeout: 6000 }
-    )
-  } else {
+  geoError.value   = ''
+  if (!navigator.geolocation) {
     isLocating.value = false
-    geoDone.value = true
+    geoError.value   = 'Геолокация не поддерживается браузером'
+    return
   }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      geoLat.value     = pos.coords.latitude.toFixed(6)
+      geoLng.value     = pos.coords.longitude.toFixed(6)
+      isLocating.value = false
+      geoDone.value    = true
+      geoError.value   = ''
+    },
+    (err) => {
+      isLocating.value = false
+      geoError.value   = err.code === 1
+        ? 'Нет разрешения на доступ к местоположению. Разрешите в настройках браузера.'
+        : err.code === 2
+        ? 'Местоположение недоступно. Проверьте GPS или сеть.'
+        : 'Превышено время ожидания. Попробуйте ещё раз.'
+    },
+    { timeout: 15000, enableHighAccuracy: false, maximumAge: 30000 }
+  )
+}
+
+function skipGeo() {
+  isLocating.value = false
+  geoDone.value    = true  // пропуск — идём дальше без координат
+  step.value       = 2
 }
 
 function handlePhoto(e) {
@@ -204,12 +256,26 @@ async function submit() {
       fd.append('direction', currentDirection.value?.id || '')
       await api.apiPostForm(`api/visits/${props.visitId}/files`, fd)
     }
-    // 3. Результат
+    // 3. Рассчитываем расстояние от точки визита (если у визита есть координаты)
+    let distanceM = undefined
+    if (geoDone.value && geoLat.value) {
+      const visit = findVisit(props.visitId)
+      if (visit && visit.lat != null && visit.lng != null) {
+        distanceM = haversineDistance(
+          parseFloat(geoLat.value), parseFloat(geoLng.value),
+          visit.lat, visit.lng
+        )
+      }
+    }
+    // 4. Результат
     await api.apiPost(`api/visits/${props.visitId}/result`, {
       status_id:  selectedId.value,
       comment:    comment.value,
       direction:  currentDirection.value?.id,
+      ...(distanceM !== undefined ? { distance_m: distanceM } : {}),
     })
+    // 5. Обновляем список визитов в фоне (без ожидания)
+    loadVisits(true).catch(() => {})
     step.value = 3
   } catch (e) {
     errorMsg.value = e.message || 'Ошибка при сохранении'
@@ -225,11 +291,16 @@ async function submit() {
 .geo-circle { width: 100px; height: 100px; border-radius: 50%; background: var(--color-bg-card); border: 3px solid var(--color-border); display: flex; align-items: center; justify-content: center; transition: all var(--transition-slow); box-shadow: var(--shadow-md); }
 .geo-circle.locating { border-color: var(--color-primary); animation: pulse 1.5s ease-in-out infinite; }
 .geo-circle.done { border-color: var(--color-success); background: rgba(0,196,140,0.1); }
+.geo-circle.error { border-color: var(--color-danger); background: rgba(255,77,106,0.08); }
 .geo-icon { font-size: 40px; color: var(--color-text-tertiary); transition: color var(--transition-base); }
 .geo-circle.locating .geo-icon { color: var(--color-primary); }
 .geo-circle.done .geo-icon { color: var(--color-success); }
+.geo-circle.error .geo-icon { color: var(--color-danger); }
 .geo-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); text-align: center; max-width: 280px; }
 .geo-ok { color: var(--color-success); font-weight: var(--font-weight-semibold); }
+.geo-err { color: var(--color-danger); font-weight: var(--font-weight-semibold); }
+.geo-hint { font-size: var(--font-size-xs); color: var(--color-text-tertiary); text-align: center; max-width: 280px; margin-top: 4px; }
+.geo-error-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .geo-success { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .geo-coords { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
 

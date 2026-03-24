@@ -219,6 +219,10 @@ function pwaSel(string $name, array $options, $selected, bool $multiple = false)
 .pwa-dir-body input[type=text]{width:100%;max-width:400px;padding:3px 6px;box-sizing:border-box;}
 .pwa-dir-badge{font-size:11px;color:#888;margin-left:6px;}
 .pwa-add-dir{margin:8px 0 16px;}
+/* Поиск по спискам */
+.pwa-sel-wrap{display:flex;flex-direction:column;gap:3px;width:100%;}
+.pwa-sel-search{padding:4px 7px;border:1px solid #bbb;border-radius:3px;font-size:13px;box-sizing:border-box;width:100%;max-width:400px;}
+.pwa-sel-search:focus{outline:none;border-color:#7095d3;}
 </style>
 
 <form method="post" action="<?= $APPLICATION->GetCurPage() ?>?mid=<?= $moduleId ?>&lang=<?= LANGUAGE_ID ?>">
@@ -282,56 +286,77 @@ foreach ($ufFieldsDeal as $code => $label) {
         };
     }
 
-    // ── Построение <select multiple> ────────────────────────────────────────
-    function buildSelect(id, items, selected, multiple, valKey='id', labelKey='name') {
-        const mult   = multiple ? ' multiple' : '';
-        const size   = multiple ? ' size="8"' : '';
+    function escHtml(str) {
+        return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Поиск по select ────────────────────────────────────────────────────
+    // Оборачивает select в контейнер с текстовым поиском
+    function wrapWithSearch(selectHtml, inputId, placeholder) {
+        placeholder = placeholder || 'Поиск…';
+        return `<div class="pwa-sel-wrap">
+            <input type="text" id="${inputId}_search" class="pwa-sel-search" placeholder="${placeholder}" autocomplete="off"
+                oninput="filterSelect(this, document.getElementById('${inputId}'))">
+            ${selectHtml}
+        </div>`;
+    }
+
+    // ── Построение <select> с необязательным поиском ───────────────────────
+    function buildSelect(id, items, selected, multiple, valKey, labelKey, withSearch) {
+        valKey   = valKey   || 'id';
+        labelKey = labelKey || 'name';
+        const mult = multiple ? ' multiple' : '';
+        const size = multiple ? ' size="8"' : '';
         let html = `<select id="${id}" style="width:100%;min-width:200px"${mult}${size}>`;
         if (!multiple) html += '<option value=""></option>';
         for (const item of items) {
             const v   = item[valKey];
             const lbl = item[labelKey] ?? item.label ?? v;
             const sel = multiple
-                ? (selected.includes ? selected.includes(v) || selected.map(String).includes(String(v)) : false)
+                ? (Array.isArray(selected) && (selected.includes(v) || selected.map(String).includes(String(v))))
                 : (String(selected) === String(v));
             html += `<option value="${escHtml(String(v))}"${sel?' selected':''}>${escHtml(lbl)}</option>`;
         }
-        return html + '</select>';
+        html += '</select>';
+        return withSearch ? wrapWithSearch(html, id, 'Поиск…') : html;
     }
 
-    function buildStageSelect(id, selected, multiple) {
+    // ── Построение <select> со стадиями (с фильтром по category_id) ────────
+    function buildStageSelectFiltered(id, selectedStages, multiple, filterCatIds) {
+        // filterCatIds: null/[] = показать все, иначе — только из этих категорий
+        const filtered = (filterCatIds && filterCatIds.length)
+            ? stages.filter(s => filterCatIds.includes(s.category_id))
+            : stages;
+
         const mult = multiple ? ' multiple' : '';
         const size = multiple ? ' size="10"' : '';
         let html = `<select id="${id}" style="width:100%;min-width:240px"${mult}${size}>`;
         if (!multiple) html += '<option value=""></option>';
         let lastCat = null;
-        for (const s of stages) {
+        for (const s of filtered) {
             if (s.category_id !== lastCat) {
                 if (lastCat !== null) html += '</optgroup>';
-                html += `<optgroup label="${escHtml(s.label.replace(/\[.*?\] /,'').split(' →')[0] || s.label)}">`;
-                // Find category name
                 const cat = categories.find(c => c.id === s.category_id);
-                if (lastCat !== null) {}
+                html += `<optgroup label="${escHtml(cat ? cat.name : 'Воронка ' + s.category_id)}">`;
                 lastCat = s.category_id;
             }
             const sel = multiple
-                ? (Array.isArray(selected) && selected.includes(s.id))
-                : (String(selected) === s.id);
+                ? (Array.isArray(selectedStages) && selectedStages.includes(s.id))
+                : (String(selectedStages) === s.id);
             html += `<option value="${escHtml(s.id)}"${sel?' selected':''}>${escHtml(s.name)}</option>`;
         }
         if (lastCat !== null) html += '</optgroup>';
-        return html + '</select>';
-    }
-
-    function escHtml(str) {
-        return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        html += '</select>';
+        return wrapWithSearch(html, id, 'Поиск стадии…');
     }
 
     // ── Рендер строки статуса завершения ──────────────────────────────────
     function renderStatus(dirId, st, isService) {
         const sid = st.id;
-        const stageHtml = buildStageSelect('st_stage_'+sid, st.stage||'', false);
-        const photoHtml = isService ? `<tr><td style="padding-left:16px;font-size:12px;color:#888">Фото-поля:</td><td>${buildSelect('st_pf_'+sid, ufFields, st.photo_fields||[], true)}<br><small>Куда записывать фото (Ctrl+клик)</small></td></tr>` : '';
+        const stageHtml = buildStageSelectFiltered('st_stage_'+sid, st.stage||'', false, null);
+        const photoHtml = isService
+            ? `<tr><td style="padding-left:16px;font-size:12px;color:#888">Фото-поля:</td><td>${buildSelect('st_pf_'+sid, ufFields, st.photo_fields||[], true, 'id', 'name', true)}<br><small>Куда записывать фото (Ctrl+клик)</small></td></tr>`
+            : '';
         return `<div class="rs-row" data-sid="${sid}" style="border:1px solid #ddd;border-radius:3px;padding:8px;margin-bottom:6px;background:#fff">
           <table style="width:100%;border-collapse:collapse"><tr>
             <td style="width:24px"><button type="button" onclick="removeStatus('${dirId}','${sid}')" style="color:red;background:none;border:none;cursor:pointer;font-size:14px;padding:0">✕</button></td>
@@ -343,20 +368,76 @@ foreach ($ufFieldsDeal as $code => $label) {
         </div>`;
     }
 
-    // ── Рендер одной карточки направления ──────────────────────────────────
+    // ── Получить выбранные pipeline id из DOM карточки ────────────────────
+    function getSelectedPipelines(card) {
+        const sel = card.querySelector('[id^="cat_"]');
+        if (!sel) return [];
+        return [...sel.selectedOptions].map(o => parseInt(o.value, 10)).filter(n => !isNaN(n));
+    }
+
+    // ── Перестроить stageSelect при смене воронки ─────────────────────────
+    window.onPipelineChange = function(sel, dirId) {
+        const card = document.querySelector(`.pwa-dir-card[data-id="${dirId}"]`);
+        if (!card) return;
+        const chosen = [...sel.selectedOptions].map(o => parseInt(o.value, 10)).filter(n => !isNaN(n));
+
+        // Запоминаем текущие выбранные значения стадий
+        const todayEl    = card.querySelector('#today_'+dirId);
+        const tomorrowEl = card.querySelector('#tomorrow_'+dirId);
+        const curToday    = todayEl    ? [...todayEl.selectedOptions].map(o => o.value)    : [];
+        const curTomorrow = tomorrowEl ? [...tomorrowEl.selectedOptions].map(o => o.value) : [];
+
+        // Перестраиваем
+        const todayWrap    = todayEl    ? todayEl.closest('.pwa-sel-wrap')    : null;
+        const tomorrowWrap = tomorrowEl ? tomorrowEl.closest('.pwa-sel-wrap') : null;
+
+        const tmp = document.createElement('div');
+
+        if (todayWrap) {
+            tmp.innerHTML = buildStageSelectFiltered('today_'+dirId, curToday, true, chosen);
+            todayWrap.replaceWith(tmp.firstElementChild);
+        }
+        if (tomorrowWrap) {
+            tmp.innerHTML = buildStageSelectFiltered('tomorrow_'+dirId, curTomorrow, true, chosen);
+            tomorrowWrap.replaceWith(tmp.firstElementChild);
+        }
+    };
+
+    // ── Live-поиск по <select> ─────────────────────────────────────────────
+    window.filterSelect = function(input, selectEl) {
+        if (!selectEl) return;
+        const q = input.value.toLowerCase().trim();
+        for (const opt of selectEl.options) {
+            opt.style.display = (!q || opt.text.toLowerCase().includes(q)) ? '' : 'none';
+        }
+    };
+
+    // ── Рендер одной карточки направления ─────────────────────────────────
     function renderCard(dir) {
         const isService = (dir.completion_type||'sales') === 'service';
         const statuses  = dir.result_statuses || [];
-        const catsHtml     = buildSelect('cat_'+dir.id, categories, (dir.pipelines||[]).map(Number), true, 'id', 'name');
-        const todayHtml    = buildStageSelect('today_'+dir.id,    dir.stages_today    || [], true);
-        const tomorrowHtml = buildStageSelect('tomorrow_'+dir.id, dir.stages_tomorrow || [], true);
-        const ufHtml    = buildSelect('uf_'+dir.id, ufFields, dir.deal_fields    || [], true);
-        const latHtml   = buildSelect('lat_'+dir.id, ufFields, [dir.lat_field    || ''], false);
-        const lngHtml   = buildSelect('lng_'+dir.id, ufFields, [dir.lng_field    || ''], false);
-        const comHtml   = buildSelect('com_'+dir.id, ufFields, [dir.comment_field|| ''], false);
-        const vdHtml    = buildSelect('vd_'+dir.id,  ufFields, [dir.visit_date_field||''], false);
-        const usersHtml = buildSelect('usr_'+dir.id, users, (dir.allowed_users||[]).map(Number), true, 'id', 'name');
+
+        const chosenPipelines = (dir.pipelines||[]).map(Number);
+
+        const catsHtml     = buildSelect('cat_'+dir.id, categories, chosenPipelines, true, 'id', 'name', true);
+        // Вставляем onchange через post-processing (dataset approach проще)
+        const catsWrapped  = catsHtml.replace(
+            `id="cat_${dir.id}"`,
+            `id="cat_${dir.id}" onchange="onPipelineChange(this,'${dir.id}')"`
+        );
+
+        const todayHtml    = buildStageSelectFiltered('today_'+dir.id,    dir.stages_today    || [], true, chosenPipelines);
+        const tomorrowHtml = buildStageSelectFiltered('tomorrow_'+dir.id, dir.stages_tomorrow || [], true, chosenPipelines);
+
+        const ufHtml    = buildSelect('uf_'+dir.id, ufFields, dir.deal_fields    || [], true, 'id', 'name', true);
+        const latHtml   = buildSelect('lat_'+dir.id, ufFields, dir.lat_field    || '', false, 'id', 'name', true);
+        const lngHtml   = buildSelect('lng_'+dir.id, ufFields, dir.lng_field    || '', false, 'id', 'name', true);
+        const comHtml   = buildSelect('com_'+dir.id, ufFields, dir.comment_field|| '', false, 'id', 'name', true);
+        const vdHtml    = buildSelect('vd_'+dir.id,  ufFields, dir.visit_date_field||'', false, 'id', 'name', true);
+        const usersHtml = buildSelect('usr_'+dir.id, users, (dir.allowed_users||[]).map(Number), true, 'id', 'name', true);
+
         const statusesHtml = statuses.map(s => renderStatus(dir.id, s, isService)).join('');
+
         return `<div class="pwa-dir-card" data-id="${dir.id}">
           <div class="pwa-dir-head" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
             <h3>▼ <span class="dir-title">${escHtml(dir.name)}</span></h3>
@@ -372,7 +453,7 @@ foreach ($ufFieldsDeal as $code => $label) {
               </select>
               <br><small>Определяет экран завершения в PWA</small>
             </td></tr>
-            <tr><td>Воронки CRM:<br><small>Пусто=все</small></td><td>${catsHtml}</td></tr>
+            <tr><td>Воронки CRM:<br><small>Пусто=все. Стадии ниже фильтруются по выбранным воронкам.</small></td><td>${catsWrapped}</td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0"></td></tr>
             <tr><td>Стадии «Сегодня»:</td><td>${todayHtml}</td></tr>
             <tr><td>Стадии «Завтра»:</td><td>${tomorrowHtml}</td></tr>
@@ -396,10 +477,10 @@ foreach ($ufFieldsDeal as $code => $label) {
         </div>`;
     }
 
-    // ── Сбор данных из DOM карточки ─────────────────────────────────────────
+    // ── Сбор данных из DOM карточки ────────────────────────────────────────
     function collectDir(card) {
         const id = card.dataset.id;
-        const getMulti = sel => [...card.querySelector(sel).selectedOptions].map(o => o.value);
+        const getMulti  = sel => [...card.querySelector(sel).selectedOptions].map(o => o.value);
         const getSingle = sel => { const el = card.querySelector(sel); return el ? el.value : ''; };
         const isService = getSingle('.dir-ctype') === 'service';
         const resultStatuses = [...card.querySelectorAll('.rs-row')].map(row => {
@@ -408,9 +489,9 @@ foreach ($ufFieldsDeal as $code => $label) {
                 id:    sid,
                 name:  (row.querySelector('.st-name')?.value || '').trim(),
                 color: row.querySelector('.st-color')?.value || '#0066ff',
-                stage: row.querySelector('[id^="st_stage_"]')?.value || '',
+                stage: row.querySelector('select[id^="st_stage_"]')?.value || '',
             };
-            const pfEl = row.querySelector('[id^="st_pf_"]');
+            const pfEl = row.querySelector('select[id^="st_pf_"]');
             st.photo_fields = (isService && pfEl) ? [...pfEl.selectedOptions].map(o => o.value) : [];
             return st;
         }).filter(s => s.name);
@@ -434,7 +515,7 @@ foreach ($ufFieldsDeal as $code => $label) {
 
     // ── Рендер всего списка ────────────────────────────────────────────────
     function renderAll() {
-        const list    = document.getElementById('js-directions-list');
+        const list = document.getElementById('js-directions-list');
         list.innerHTML = directions.map(renderCard).join('');
     }
 
@@ -463,29 +544,24 @@ foreach ($ufFieldsDeal as $code => $label) {
             id: row.dataset.sid,
             name:  row.querySelector('.st-name')?.value || '',
             color: row.querySelector('.st-color')?.value || '#0066ff',
-            stage: row.querySelector('[id^="st_stage_"]')?.value || '',
+            stage: row.querySelector('select[id^="st_stage_"]')?.value || '',
             photo_fields: [],
         }));
         container.innerHTML = current.map(s => renderStatus(dirId, s, isService)).join('');
     };
-
-    // ── Добавление направления ─────────────────────────────────────────────
 
     document.getElementById('js-add-dir').addEventListener('click', function() {
         directions.push(newDir());
         renderAll();
     });
 
-    // ── Перехват submit формы — сериализуем в JSON ─────────────────────────
     document.querySelector('form').addEventListener('submit', function() {
-        // Собираем актуальные данные из DOM
         const cards = document.querySelectorAll('#js-directions-list .pwa-dir-card');
         const result = [];
         cards.forEach(card => result.push(collectDir(card)));
         document.getElementById('pwa_directions_json').value = JSON.stringify(result);
     });
 
-    // ── Начальный рендер ──────────────────────────────────────────────────
     renderAll();
 })();
 </script>
@@ -498,22 +574,30 @@ $tabControl->BeginNextTab();
 <tr>
     <td><label for="company_fields">Поля Компании</label></td>
     <td>
-        <select name="company_fields[]" id="company_fields" multiple size="10" style="width:100%;max-width:500px">
-            <?php foreach ($ufFieldsCompany as $val => $lbl): ?>
-                <option value="<?= htmlspecialchars($val) ?>"<?= in_array($val, $companyFieldsSelected) ? ' selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="pwa-sel-wrap">
+            <input type="text" class="pwa-sel-search" placeholder="Поиск поля…" autocomplete="off"
+                oninput="filterSelect(this, document.getElementById('company_fields'))">
+            <select name="company_fields[]" id="company_fields" multiple size="10" style="width:100%;max-width:500px">
+                <?php foreach ($ufFieldsCompany as $val => $lbl): ?>
+                    <option value="<?= htmlspecialchars($val) ?>"<?= in_array($val, $companyFieldsSelected) ? ' selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <br><small>Поля компании, видимые в карточке (Ctrl+клик — множественный выбор)</small>
     </td>
 </tr>
 <tr>
     <td><label for="contact_fields">Поля Контакта</label></td>
     <td>
-        <select name="contact_fields[]" id="contact_fields" multiple size="10" style="width:100%;max-width:500px">
-            <?php foreach ($ufFieldsContact as $val => $lbl): ?>
-                <option value="<?= htmlspecialchars($val) ?>"<?= in_array($val, $contactFieldsSelected) ? ' selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="pwa-sel-wrap">
+            <input type="text" class="pwa-sel-search" placeholder="Поиск поля…" autocomplete="off"
+                oninput="filterSelect(this, document.getElementById('contact_fields'))">
+            <select name="contact_fields[]" id="contact_fields" multiple size="10" style="width:100%;max-width:500px">
+                <?php foreach ($ufFieldsContact as $val => $lbl): ?>
+                    <option value="<?= htmlspecialchars($val) ?>"<?= in_array($val, $contactFieldsSelected) ? ' selected' : '' ?>><?= htmlspecialchars($lbl) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <br><small>Поля контакта, видимые в карточке (Ctrl+клик — множественный выбор)</small>
     </td>
 </tr>
@@ -532,7 +616,11 @@ $tabControl->BeginNextTab();
 <tr>
     <td><label for="pwa_allowed_users">Сотрудники с доступом</label></td>
     <td>
-        <?= pwaSel('pwa_allowed_users', $activeUsers, $pwaAllowedUsers, true) ?>
+        <div class="pwa-sel-wrap">
+            <input type="text" class="pwa-sel-search" placeholder="Поиск сотрудника…" autocomplete="off"
+                oninput="filterSelect(this, document.getElementById('pwa_allowed_users'))">
+            <?= pwaSel('pwa_allowed_users', $activeUsers, $pwaAllowedUsers, true) ?>
+        </div>
         <br><small>Пусто = доступ для всех. Ctrl+клик — множественный выбор.</small>
     </td>
 </tr>
