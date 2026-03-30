@@ -36,6 +36,15 @@
           Завтра
           <span class="tab-count">{{ tomorrowTotal }}</span>
         </button>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'completed' }"
+          @click="activeTab = 'completed'"
+        >
+          <span class="material-symbols-rounded tab-icon">task_alt</span>
+          Заверш.
+          <span class="tab-count">{{ completedTotal }}</span>
+        </button>
       </div>
 
       <!-- Stats mini bar -->
@@ -93,8 +102,8 @@ import { useDirections } from '../composables/useDirections'
 
 const route = useRoute()
 const {
-  visitsToday, visitsTomorrow,
-  todayTotal, tomorrowTotal,
+  visitsToday, visitsTomorrow, visitsCompleted,
+  todayTotal, tomorrowTotal, completedTotal,
   loadVisits, loadNextPage, hasMore,
   loading,
 } = useVisits()
@@ -114,15 +123,15 @@ async function switchDirection(id) {
   await loadVisits(true)
 }
 
-const activeTab = ref(route.query.tab === 'tomorrow' ? 'tomorrow' : 'today')
+const activeTab = ref(route.query.tab === 'tomorrow' ? 'tomorrow' : (route.query.tab === 'completed' ? 'completed' : 'today'))
 const loadingMore = ref(false)
 
 const currentVisits = computed(() =>
-  activeTab.value === 'today' ? visitsToday.value : visitsTomorrow.value
+  activeTab.value === 'today' ? visitsToday.value : (activeTab.value === 'completed' ? visitsCompleted.value : visitsTomorrow.value)
 )
 
 const currentTotal = computed(() =>
-  activeTab.value === 'today' ? todayTotal.value : tomorrowTotal.value
+  activeTab.value === 'today' ? todayTotal.value : (activeTab.value === 'completed' ? completedTotal.value : tomorrowTotal.value)
 )
 
 const currentHasMore = computed(() => hasMore(activeTab.value))
@@ -209,25 +218,32 @@ watch(activeTab, async (tab) => {
 /* Tabs */
 .tab-bar {
   display: flex;
-  gap: var(--space-sm);
+  gap: 3px;
   background: var(--color-bg-card);
-  padding: 4px;
+  padding: 3px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+
+.tab-bar::-webkit-scrollbar { display: none; }
 
 .tab-btn {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: var(--space-md) var(--space-base);
+  gap: 4px;
+  padding: 8px 4px;
   border-radius: var(--radius-md);
-  font-size: var(--font-size-base);
+  font-size: 11px;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
   transition: all var(--transition-base);
+  white-space: nowrap;
 }
 
 .tab-btn.active {
@@ -237,20 +253,22 @@ watch(activeTab, async (tab) => {
 }
 
 .tab-icon {
-  font-size: 20px;
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
 .tab-count {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
   border-radius: var(--radius-full);
   background: var(--color-bg-elevated);
-  font-size: var(--font-size-xs);
+  font-size: 10px;
   font-weight: var(--font-weight-bold);
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .tab-btn.active .tab-count {

@@ -179,6 +179,15 @@
       <div class="actions-section animate-fade-in-up" style="animation-delay: 200ms">
         <router-link
           v-if="!visit.stage_id?.includes('WON')"
+          :to="`/map?planDealId=${visit.id}&title=${encodeURIComponent(visit.title||'')}`"
+          class="action-btn action-plan"
+        >
+          <span class="material-symbols-rounded action-btn-icon">calendar_add_on</span>
+          Запланировать визит
+        </router-link>
+
+        <router-link
+          v-if="!visit.stage_id?.includes('WON')"
           :to="`/visits/${visit.id}/result`"
           class="action-btn action-complete"
         >
@@ -568,6 +577,12 @@ function formatAmount(val) {
 .action-complete {
   background: linear-gradient(135deg, var(--color-success), #00a06a);
   color: white;
+}
+
+.action-plan {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
 }
 
 .action-comment {

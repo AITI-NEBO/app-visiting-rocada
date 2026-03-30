@@ -113,15 +113,20 @@
     <div v-if="step === 3" class="step-content animate-fade-in-up" style="text-align:center">
       <div class="done-visual">
         <span class="material-symbols-rounded done-icon">task_alt</span>
-        <h3 class="done-title">Работа завершена!</h3>
-        <p class="done-text">Акт и фотоматериалы сохранены в CRM.</p>
+        <h3 class="done-title">Визит завершён!</h3>
+        <p class="done-text">Итог и фото сохранены.</p>
       </div>
-      <router-link :to="`/visits/${visitId}`" class="primary-btn" style="margin-top:var(--space-lg)">
-        <span class="material-symbols-rounded">arrow_back</span>
-        К заявке
+
+      <router-link :to="`/visits/${visitId}/infopovod`" class="primary-btn" style="margin-top:var(--space-lg); background: linear-gradient(135deg, var(--color-success), #00a06a);">
+        <span class="material-symbols-rounded">playlist_add_check</span>
+        Заполнить инфоповод
       </router-link>
-      <router-link to="/" class="secondary-btn" style="margin-top:var(--space-md)">
-        <span class="material-symbols-rounded">home</span>
+
+      <router-link :to="`/visits/${visitId}`" class="secondary-btn" style="margin-top:var(--space-md)">
+        <span class="material-symbols-rounded">arrow_back</span>
+        Вернуться к визиту
+      </router-link>
+      <router-link to="/" class="secondary-btn" style="margin-top:var(--space-md); border:none; background:transparent; color:var(--color-text-secondary)">
         На главную
       </router-link>
     </div>
@@ -130,12 +135,15 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
+const route = useRoute()
+const router = useRouter()
 const api  = useApi()
 const { currentDirection } = useDirections()
 const { findVisit, loadVisits } = useVisits()
@@ -253,7 +261,21 @@ async function submit() {
     })
     // Обновляем список визитов в фоне (без ожидания)
     loadVisits(true).catch(() => {})
-    step.value = 3
+
+    const selectedStatus = statuses.value.find(s => s.id === selectedId.value)
+    
+    const isSuccess = selectedStatus?.is_successful === true 
+                   || selectedStatus?.is_successful === 'true' 
+                   || selectedStatus?.is_successful === '1' 
+                   || selectedStatus?.is_successful === 'Y'
+                   || (selectedStatus?.name || '').toLowerCase().includes('успеш')
+                   || (selectedStatus?.name || '').toLowerCase().includes('состоялся')
+                   
+    if (isSuccess) {
+      router.push(`/visits/${props.visitId}/infopovod`)
+    } else {
+      step.value = 3
+    }
   } catch (e) {
     errorMsg.value = e.message || 'Ошибка при сохранении'
   } finally {

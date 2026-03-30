@@ -67,14 +67,23 @@
           v-for="st in statuses"
           :key="st.id"
           class="result-option"
-          :class="{ selected: selectedId === st.id }"
+          :class="{ selected: selectedId === st.id, 'is-success-status': st.is_successful }"
           :style="selectedId === st.id ? { borderColor: st.color } : {}"
           @click="selectedId = st.id"
         >
           <span class="result-dot" :style="{ background: st.color }"></span>
           <span class="result-option-label">{{ st.name }}</span>
+          <span v-if="st.is_successful" class="success-badge" title="После сохранения откроется инфоповод">
+            <span class="material-symbols-rounded" style="font-size:14px">playlist_add_check</span>
+          </span>
           <span v-if="selectedId === st.id" class="material-symbols-rounded result-check">check_circle</span>
         </button>
+      </div>
+
+      <!-- Подсказка если выбран успешный статус -->
+      <div v-if="selectedIsSuccessful" class="success-hint">
+        <span class="material-symbols-rounded">info</span>
+        После сохранения откроется форма заполнения инфоповодов
       </div>
 
       <!-- Comment -->
@@ -121,12 +130,17 @@
         <h3 class="done-title">Визит завершён!</h3>
         <p class="done-text">Итог сохранён в CRM.</p>
       </div>
-      <router-link :to="`/visits/${visitId}`" class="primary-btn" style="margin-top:var(--space-lg)">
+
+      <router-link :to="`/visits/${visitId}/infopovod`" class="primary-btn" style="margin-top:var(--space-lg); background: linear-gradient(135deg, var(--color-success), #00a06a);">
+        <span class="material-symbols-rounded">playlist_add_check</span>
+        Заполнить инфоповод
+      </router-link>
+
+      <router-link :to="`/visits/${visitId}`" class="secondary-btn" style="margin-top:var(--space-md)">
         <span class="material-symbols-rounded">arrow_back</span>
         Вернуться к визиту
       </router-link>
-      <router-link to="/" class="secondary-btn" style="margin-top:var(--space-md)">
-        <span class="material-symbols-rounded">home</span>
+      <router-link to="/" class="secondary-btn" style="margin-top:var(--space-md); border:none; background:transparent; color:var(--color-text-secondary)">
         На главную
       </router-link>
     </div>
@@ -137,8 +151,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
@@ -146,6 +160,7 @@ import { useVisits } from '../../composables/useVisits'
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
 const route       = useRoute()
+const router      = useRouter()
 const api         = useApi()
 const { currentDirection } = useDirections()
 const { findVisit, loadVisits } = useVisits()
@@ -174,6 +189,15 @@ const comment       = ref('')
 const photos        = ref([])
 const submitting    = ref(false)
 const errorMsg      = ref('')
+
+// Вычисляем — выбранный статус успешный?
+const selectedIsSuccessful = computed(() => {
+  if (!selectedId.value) return false
+  const st = statuses.value.find(s => s.id === selectedId.value)
+  return !!(st?.is_successful || st?.is_successful === true
+    || (st?.name || '').toLowerCase().includes('успеш')
+    || (st?.name || '').toLowerCase().includes('состоялся'))
+})
 
 // Загружаем статусы из конфига направления
 onMounted(async () => {
@@ -276,7 +300,17 @@ async function submit() {
     })
     // 5. Обновляем список визитов в фоне (без ожидания)
     loadVisits(true).catch(() => {})
-    step.value = 3
+
+    const selectedStatus = statuses.value.find(s => s.id === selectedId.value)
+    
+    // Resilient check - is_successful is now correctly returned from API
+    const isSuccess = selectedIsSuccessful.value
+    
+    if (isSuccess) {
+      router.push(`/visits/${props.visitId}/infopovod`)
+    } else {
+      step.value = 3
+    }
   } catch (e) {
     errorMsg.value = e.message || 'Ошибка при сохранении'
   } finally {
@@ -309,12 +343,14 @@ async function submit() {
 .secondary-btn { width: 100%; height: 48px; border-radius: var(--radius-lg); background: var(--color-bg-card); color: var(--color-text-primary); font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); border: 1px solid var(--color-border); text-decoration: none; transition: transform var(--transition-fast); }
 
 .step-title { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
-.result-options { display: flex; flex-direction: column; gap: var(--space-sm); }
 .result-option { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-base); background: var(--color-bg-card); border-radius: var(--radius-lg); border: 2px solid var(--color-border); cursor: pointer; transition: all var(--transition-fast); }
 .result-option.selected { background: rgba(0,212,170,0.05); }
+.result-option.is-success-status { border-color: rgba(0,196,140,0.3); }
 .result-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
 .result-option-label { flex: 1; font-size: var(--font-size-base); font-weight: var(--font-weight-medium); }
 .result-check { font-size: 22px; color: var(--color-accent); }
+.success-badge { display: flex; align-items: center; background: rgba(0,196,140,0.15); color: var(--color-success); border-radius: 6px; padding: 2px 4px; flex-shrink: 0; }
+.success-hint { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(0,196,140,0.1); border: 1px solid rgba(0,196,140,0.3); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--color-success); }
 
 .note-title { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-sm); }
 .note-textarea { width: 100%; padding: var(--space-base); border-radius: var(--radius-md); background: var(--color-bg-input); border: 1px solid var(--color-border); color: var(--color-text-primary); font-size: var(--font-size-base); resize: vertical; font-family: var(--font-family); transition: border-color var(--transition-fast); }

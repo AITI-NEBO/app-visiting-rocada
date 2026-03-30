@@ -23,3 +23,16 @@ function pwaSendError(string $message, int $code = 400): void
     );
     exit;
 }
+
+/**
+ * Читает и декодирует тело JSON-запроса (php://input)
+ */
+function pwaGetJsonData(): array
+{
+    static $cached = null;
+    if ($cached !== null) return $cached;
+    $raw = file_get_contents('php://input');
+    $decoded = json_decode($raw, true);
+    $cached = is_array($decoded) ? $decoded : [];
+    return $cached;
+}

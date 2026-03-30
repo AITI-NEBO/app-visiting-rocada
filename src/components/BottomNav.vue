@@ -27,8 +27,9 @@ const { todayCount } = useVisits()
 const navItems = computed(() => [
   { to: '/', icon: 'home', label: 'Главная', exact: true },
   { to: '/visits', icon: 'assignment', label: 'Визиты', badge: todayCount.value || null },
+  { to: '/plan', icon: 'calendar_add_on', label: 'Планировать' },
   { to: '/map', icon: 'map', label: 'Карта' },
-  { to: '/profile', icon: 'person', label: 'Профиль' }
+  { to: '/profile', icon: 'person', label: 'Профиль' },
 ])
 
 function isActive(item) {
@@ -72,8 +73,10 @@ function isActive(item) {
   color: var(--color-text-tertiary);
   transition: color var(--transition-fast);
   position: relative;
-  padding: var(--space-sm) var(--space-lg);
+  padding: var(--space-sm) var(--space-sm);
   border-radius: var(--radius-md);
+  flex: 1;
+  min-width: 0;
 }
 
 .nav-item.active {

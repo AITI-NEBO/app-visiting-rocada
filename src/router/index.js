@@ -49,6 +49,12 @@ const routes = [
         meta: { requiresAuth: true }
     },
     {
+        path: '/visits/:id/infopovod',
+        name: 'Infopovod',
+        component: () => import('../views/InfopovodView.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
         path: '/company/:id',
         name: 'Company',
         component: () => import('../views/CompanyView.vue'),
@@ -64,6 +70,12 @@ const routes = [
         path: '/map',
         name: 'Map',
         component: () => import('../views/MapView.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/plan',
+        name: 'PlanVisit',
+        component: () => import('../views/PlanVisitView.vue'),
         meta: { requiresAuth: true }
     },
     {

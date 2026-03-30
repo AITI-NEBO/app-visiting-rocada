@@ -37,12 +37,28 @@ function visitsList(int $userId, array $params): void
         pwaSendError('Доступ к данному направлению запрещён', 403);
     }
 
-    $stages  = $period === 'tomorrow'
-        ? ($dirCfg['stages_tomorrow'] ?? [])
-        : ($dirCfg['stages_today']    ?? []);
+    $stagesSuccess = json_decode(\Bitrix\Main\Config\Option::get($mid, 'stages_success', '[]'), true) ?? [];
+    $stagesFail    = json_decode(\Bitrix\Main\Config\Option::get($mid, 'stages_fail', '[]'), true) ?? [];
+
+    $stages = [];
+    if ($period === 'tomorrow') {
+        $stages = $dirCfg['stages_tomorrow'] ?? [];
+    } elseif ($period === 'today') {
+        $stages = $dirCfg['stages_today']    ?? [];
+    } elseif ($period === 'completed') {
+        // Берём все стадии из result_statuses направления (там поле 'stage' — CRM стадия завершения)
+        $resultStagesList = [];
+        foreach (($dirCfg['result_statuses'] ?? []) as $rs) {
+            if (!empty($rs['stage'])) {
+                $resultStagesList[] = trim($rs['stage']);
+            }
+        }
+        // Также добавляем из глобальных настроек если они заполнены
+        $stages = array_unique(array_filter(array_merge($resultStagesList, $stagesSuccess, $stagesFail)));
+    }
 
     if (empty($stages)) {
-        pwaSendError('Стадии не настроены для выбранного периода', 422);
+        pwaSendError($period === 'completed' ? 'Стадии завершения не настроены (укажите поле Stage в статусах завершения направления)' : 'Стадии не настроены для выбранного периода', 422);
     }
 
     $latF    = $dirCfg['lat_field'] ?? '';
@@ -55,6 +71,19 @@ function visitsList(int $userId, array $params): void
     $pipelines = array_map('intval', $dirCfg['pipelines'] ?? []);
     if (!empty($pipelines)) {
         $filter['CATEGORY_ID'] = $pipelines;
+    }
+
+    // Фильтр по дате (только для "completed")
+    if ($period === 'completed') {
+        $dayStartTs  = mktime(0, 0, 0, date('n'), date('j'), date('Y'));
+        $dayEndTs    = mktime(23, 59, 59, date('n'), date('j'), date('Y'));
+        if ($vdF) {
+            $filter['>=' . $vdF] = ConvertTimeStamp($dayStartTs, 'FULL');
+            $filter['<=' . $vdF] = ConvertTimeStamp($dayEndTs, 'FULL');
+        } else {
+            $filter['>=DATE_MODIFY'] = ConvertTimeStamp($dayStartTs, 'FULL');
+            $filter['<=DATE_MODIFY'] = ConvertTimeStamp($dayEndTs, 'FULL');
+        }
     }
 
     $dealFields = array_filter($dirCfg['deal_fields'] ?? []);
@@ -79,10 +108,6 @@ function visitsList(int $userId, array $params): void
     ])->fetchAll();
 
     $total = DealTable::getCount($filter);
-
-    // Подсчёт успешных/провальных визитов за текущий период
-    $stagesSuccess = json_decode(\Bitrix\Main\Config\Option::get($mid, 'stages_success', '[]'), true) ?? [];
-    $stagesFail    = json_decode(\Bitrix\Main\Config\Option::get($mid, 'stages_fail',    '[]'), true) ?? [];
 
     $successCount = 0;
     $failCount    = 0;

@@ -7,6 +7,7 @@ import { useApi } from './useApi'
 // Глобальный кэш — общий для всех компонентов
 const visitsToday = ref([])
 const visitsTomorrow = ref([])
+const visitsCompleted = ref([])
 const stats = ref(null)
 const config = ref(null)
 const loading = ref(false)
@@ -18,6 +19,7 @@ const failCount = ref(0)
 const pagination = ref({
     today: { page: 0, pages: 1, total: 0, loaded: false },
     tomorrow: { page: 0, pages: 1, total: 0, loaded: false },
+    completed: { page: 0, pages: 1, total: 0, loaded: false },
 })
 
 export function useVisits() {
@@ -32,17 +34,21 @@ export function useVisits() {
             // Сброс
             visitsToday.value = []
             visitsTomorrow.value = []
+            visitsCompleted.value = []
             pagination.value.today = { page: 0, pages: 1, total: 0, loaded: false }
             pagination.value.tomorrow = { page: 0, pages: 1, total: 0, loaded: false }
+            pagination.value.completed = { page: 0, pages: 1, total: 0, loaded: false }
 
             // Загружаем первые страницы параллельно
             await Promise.all([
                 loadNextPage('today'),
                 loadNextPage('tomorrow'),
+                loadNextPage('completed'),
             ])
 
             pagination.value.today.loaded = true
             pagination.value.tomorrow.loaded = true
+            pagination.value.completed.loaded = true
         } catch (e) {
             error.value = e.message
             console.error('[useVisits] loadVisits error:', e)
@@ -76,8 +82,10 @@ export function useVisits() {
             const items = data.items || []
             if (period === 'today') {
                 visitsToday.value = [...visitsToday.value, ...items]
-            } else {
+            } else if (period === 'tomorrow') {
                 visitsTomorrow.value = [...visitsTomorrow.value, ...items]
+            } else if (period === 'completed') {
+                visitsCompleted.value = [...visitsCompleted.value, ...items]
             }
 
             pagination.value[period] = {
@@ -171,6 +179,24 @@ export function useVisits() {
         return data.data
     }
 
+    // ── Планирование визита ───────────────────────────────────────────────
+    async function fetchUnloadPoints(dealId) {
+        return api.apiGet(`api/visits/${dealId}/unload-points`)
+    }
+
+    async function planVisitApi(dealId, visitData) {
+        return api.apiPost(`api/visits/${dealId}/plan`, visitData)
+    }
+
+    // ── Инфоповоды ────────────────────────────────────────────────────────
+    async function fetchInfopovods(dealId) {
+        return api.apiGet(`api/visits/${dealId}/infopovods`)
+    }
+
+    async function submitInfopovods(dealId, items) {
+        return api.apiPost(`api/visits/${dealId}/infopovods`, { items })
+    }
+
     // ── Computed ──────────────────────────────────────────────────────────
     const todayCount = computed(() => visitsToday.value.length)
     const tomorrowCount = computed(() => visitsTomorrow.value.length)
@@ -183,17 +209,19 @@ export function useVisits() {
         const numId = Number(id)
         return visitsToday.value.find(v => v.id === numId)
             || visitsTomorrow.value.find(v => v.id === numId)
+            || visitsCompleted.value.find(v => v.id === numId)
             || null
     }
 
-    // Сброс при логауте
     function reset() {
         visitsToday.value = []
         visitsTomorrow.value = []
+        visitsCompleted.value = []
         stats.value = null
         config.value = null
         pagination.value.today = { page: 0, pages: 1, total: 0, loaded: false }
         pagination.value.tomorrow = { page: 0, pages: 1, total: 0, loaded: false }
+        pagination.value.completed = { page: 0, pages: 1, total: 0, loaded: false }
         successCount.value = 0
         failCount.value = 0
     }
@@ -202,6 +230,7 @@ export function useVisits() {
         // Данные
         visitsToday,
         visitsTomorrow,
+        visitsCompleted,
         stats,
         config,
         loading,
@@ -213,6 +242,7 @@ export function useVisits() {
         tomorrowCount,
         todayTotal,
         tomorrowTotal,
+        completedTotal: computed(() => pagination.value.completed.total),
         completedToday,
         successCount,
         failCount,
@@ -229,6 +259,10 @@ export function useVisits() {
         loadComments,
         submitResult,
         uploadFiles,
+        fetchUnloadPoints,
+        planVisitApi,
+        fetchInfopovods,
+        submitInfopovods,
         findVisit,
         reset,
     }

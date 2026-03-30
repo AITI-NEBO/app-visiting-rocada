@@ -50,7 +50,9 @@
               <span class="sheet-item-addr">{{ v.stage_name || v.stage_id }} · {{ v.date || '' }}</span>
             </div>
             <div class="sheet-item-meta">
-              <span class="sheet-item-time">{{ v.date || '' }}</span>
+              <button class="sheet-plan-btn" @click.stop="planVisit(v)" title="Запланировать">
+                <span class="material-symbols-rounded" style="font-size:16px">calendar_add_on</span>
+              </button>
               <router-link :to="`/visits/${v.id}`" class="sheet-item-link" @click.stop>
                 <span class="material-symbols-rounded" style="font-size:16px">open_in_new</span>
               </router-link>
@@ -95,6 +97,13 @@
         <h3 class="modal-title">Запланировать визит</h3>
         <p class="modal-subtitle">{{ selectedClient?.company_name || selectedClient?.title || '' }}</p>
         <div class="modal-field">
+          <label>Пункт разгрузки</label>
+          <select v-model="planPointId" class="modal-input">
+            <option value="" disabled>Выберите пункт</option>
+            <option v-for="pt in unloadPoints" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
+          </select>
+        </div>
+        <div class="modal-field">
           <label>Дата</label>
           <input type="date" v-model="planDate" class="modal-input" />
         </div>
@@ -103,16 +112,13 @@
           <input type="time" v-model="planTime" class="modal-input" />
         </div>
         <div class="modal-actions">
-          <button class="btn-secondary" @click="showPlanModal = false">Отмена</button>
-          <button class="btn-primary" @click="confirmPlan">
-            <span class="material-symbols-rounded" style="font-size:18px">check</span>
-            Запланировать
+          <button class="btn-secondary" @click="showPlanModal = false" :disabled="isPlanning">Отмена</button>
+          <button class="btn-primary" @click="confirmPlan" :disabled="isPlanning">
+            <span class="material-symbols-rounded" style="font-size:18px" v-if="!isPlanning">check</span>
+            {{ isPlanning ? 'Отправка...' : 'Запланировать' }}
           </button>
         </div>
-        <div class="demo-hint">
-          <span class="material-symbols-rounded" style="font-size:14px">science</span>
-          Демо — данные не сохраняются
-        </div>
+
       </div>
     </div>
 
@@ -127,10 +133,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { useVisits } from '../composables/useVisits'
 
-const { visitsToday, loadVisits } = useVisits()
+const route = useRoute()
+
+const { visitsToday, loadVisits, fetchUnloadPoints, planVisitApi } = useVisits()
 
 const activeTab = ref('today')
 const mapEl = ref(null)
@@ -150,6 +159,9 @@ const showPlanModal = ref(false)
 const selectedClient = ref(null)
 const planDate = ref('')
 const planTime = ref('10:00')
+const planPointId = ref('')
+const unloadPoints = ref([])
+const isPlanning = ref(false)
 const toastMsg = ref('')
 
 let mapInstance = null
@@ -232,25 +244,75 @@ function goToMyLocation() {
   )
 }
 
-function planVisit(client) {
-  if (client.hasPlannedVisit) {
-    showToast('Визит уже запланирован')
-    return
-  }
+async function planVisit(client) {
+  // Планировать можно любой визит — нет ограничения по hasPlannedVisit
   selectedClient.value = client
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
   planDate.value = tomorrow.toISOString().split('T')[0]
+  planTime.value = '10:00'
+  planPointId.value = ''
+  
+  showToast('Загрузка пунктов разгрузки...')
+  try {
+    const dealId = client.deal_id || client.id
+    const res = await fetchUnloadPoints(dealId)
+    unloadPoints.value = res.points || []
+    if (unloadPoints.value.length > 0) {
+        planPointId.value = unloadPoints.value[0].id
+    } else {
+        showToast('Точки разгрузки не найдены для этой компании')
+    }
+  } catch (e) {
+    console.error(e)
+    showToast('Ошибка загрузки пунктов разгрузки')
+    unloadPoints.value = []
+  }
+
   showPlanModal.value = true
 }
 
-function confirmPlan() {
-  showPlanModal.value = false
-  if (selectedClient.value) {
-    selectedClient.value.hasPlannedVisit = true
+async function confirmPlan() {
+  if (!planDate.value || !planTime.value || !planPointId.value) {
+    showToast('Заполните все поля')
+    return
   }
-  showToast('Визит запланирован!')
-  updateMarkers()
+
+  isPlanning.value = true
+  try {
+    const dealId = selectedClient.value.deal_id || selectedClient.value.id
+    await planVisitApi(dealId, {
+      point_id: planPointId.value,
+      visit_date: planDate.value,
+      visit_time: planTime.value
+    })
+    
+    showPlanModal.value = false
+    if (selectedClient.value) {
+      selectedClient.value.hasPlannedVisit = true
+    }
+    showToast('Визит запланирован!')
+    updateMarkers()
+  } catch (e) {
+    console.error(e)
+    showToast(e.message || 'Ошибка планирования визита')
+  } finally {
+    isPlanning.value = false
+  }
+}
+
+function handleMessage(event) {
+    if (event.data && event.data.type === 'scheduleVisit') {
+        const dealId = event.data.dealId
+        if (dealId) {
+            const client = allClients.value.find(c => (c.deal_id == dealId || c.id == dealId))
+            if (client) {
+                planVisit(client)
+            } else {
+                planVisit({ id: dealId, title: `Сделка #${dealId}`, company_name: `Сделка #${dealId}` })
+            }
+        }
+    }
 }
 
 function updateMarkers() {
@@ -287,7 +349,18 @@ function updateMarkers() {
 }
 
 onMounted(async () => {
+  window.addEventListener('message', handleMessage)
   await loadVisits()
+  
+  if (route.query.planDealId) {
+    planVisit({ 
+      id: route.query.planDealId, 
+      deal_id: route.query.planDealId,
+      title: route.query.title || `Сделка #${route.query.planDealId}`,
+      hasPlannedVisit: false
+    })
+  }
+
   // Load Yandex Maps 2.1 (works without API key)
   await new Promise((resolve) => {
     if (window.ymaps) { resolve(); return }
@@ -308,6 +381,10 @@ onMounted(async () => {
 
     updateMarkers()
   })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('message', handleMessage)
 })
 
 watch(activeTab, () => {

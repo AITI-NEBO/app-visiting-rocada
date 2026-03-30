@@ -24,11 +24,11 @@ function handleDirections(array $params): void
     // Возвращаем публичные поля: id, name, icon, completion_type, result_statuses (без stage)
     pwaSendJson(array_map(function ($d) {
         $statuses = array_map(fn($st) => [
-            'id'           => $st['id'],
-            'name'         => $st['name'] ?? '',
-            'color'        => $st['color'] ?? '#0066ff',
-            // photo_fields нужны PWA для Service, stage — нет
-            'photo_fields' => $st['photo_fields'] ?? [],
+            'id'            => $st['id'],
+            'name'          => $st['name'] ?? '',
+            'color'         => $st['color'] ?? '#0066ff',
+            'photo_fields'  => $st['photo_fields'] ?? [],
+            'is_successful' => (bool)($st['is_successful'] ?? false),
         ], $d['result_statuses'] ?? []);
 
         return [

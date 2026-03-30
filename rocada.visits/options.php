@@ -115,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                         'color'        => preg_match('/^#[0-9a-fA-F]{3,6}$/', $st['color'] ?? '') ? $st['color'] : '#0066ff',
                         'stage'        => trim($st['stage'] ?? ''),
                         'photo_fields' => array_values(array_filter((array)($st['photo_fields'] ?? []))),
+                        'is_successful'=> !empty($st['is_successful']),
                     ];
                 }
 
@@ -355,8 +356,9 @@ foreach ($ufFieldsDeal as $code => $label) {
         const sid = st.id;
         const stageHtml = buildStageSelectFiltered('st_stage_'+sid, st.stage||'', false, null);
         const photoHtml = isService
-            ? `<tr><td style="padding-left:16px;font-size:12px;color:#888">Фото-поля:</td><td>${buildSelect('st_pf_'+sid, ufFields, st.photo_fields||[], true, 'id', 'name', true)}<br><small>Куда записывать фото (Ctrl+клик)</small></td></tr>`
+            ? `<tr><td style="padding-left:16px;font-size:12px;color:#888">Фото-поля:</td><td colspan="4">${buildSelect('st_pf_'+sid, ufFields, st.photo_fields||[], true, 'id', 'name', true)}<br><small>Куда записывать фото (Ctrl+клик)</small></td></tr>`
             : '';
+        const successHtml = `<tr><td style="padding-left:16px;font-size:12px;color:#888"></td><td colspan="4"><label><input type="checkbox" class="st-success"${st.is_successful?' checked':''}> Успешный визит (требует заполнение ИНФОПОВОДА)</label></td></tr>`;
         return `<div class="rs-row" data-sid="${sid}" style="border:1px solid #ddd;border-radius:3px;padding:8px;margin-bottom:6px;background:#fff">
           <table style="width:100%;border-collapse:collapse"><tr>
             <td style="width:24px"><button type="button" onclick="removeStatus('${dirId}','${sid}')" style="color:red;background:none;border:none;cursor:pointer;font-size:14px;padding:0">✕</button></td>
@@ -364,7 +366,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             <td style="width:36px;padding:0 4px"><input type="color" class="st-color" value="${st.color||'#0066ff'}" title="Цвет" style="width:32px;height:28px;padding:1px;border:1px solid #ccc;border-radius:3px;cursor:pointer"></td>
             <td style="padding:0 4px;font-size:12px;color:#666">&nbsp;Стадия:</td>
             <td>${stageHtml}</td>
-          </tr>${photoHtml}</table>
+          </tr>${photoHtml}${successHtml}</table>
         </div>`;
     }
 
@@ -490,6 +492,7 @@ foreach ($ufFieldsDeal as $code => $label) {
                 name:  (row.querySelector('.st-name')?.value || '').trim(),
                 color: row.querySelector('.st-color')?.value || '#0066ff',
                 stage: row.querySelector('select[id^="st_stage_"]')?.value || '',
+                is_successful: row.querySelector('.st-success')?.checked || false,
             };
             const pfEl = row.querySelector('select[id^="st_pf_"]');
             st.photo_fields = (isService && pfEl) ? [...pfEl.selectedOptions].map(o => o.value) : [];
@@ -530,7 +533,7 @@ foreach ($ufFieldsDeal as $code => $label) {
         const isService = card.querySelector('.dir-ctype')?.value === 'service';
         const sid = 'rs_' + Date.now();
         const tmp = document.createElement('div');
-        tmp.innerHTML = renderStatus(dirId, {id:sid,name:'',color:'#0066ff',stage:'',photo_fields:[]}, isService);
+        tmp.innerHTML = renderStatus(dirId, {id:sid,name:'',color:'#0066ff',stage:'',photo_fields:[],is_successful:false}, isService);
         card.querySelector('#statuses_' + dirId).appendChild(tmp.firstElementChild);
     };
     window.removeStatus = function(dirId, sid) {
@@ -545,6 +548,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             name:  row.querySelector('.st-name')?.value || '',
             color: row.querySelector('.st-color')?.value || '#0066ff',
             stage: row.querySelector('select[id^="st_stage_"]')?.value || '',
+            is_successful: row.querySelector('.st-success')?.checked || false,
             photo_fields: [],
         }));
         container.innerHTML = current.map(s => renderStatus(dirId, s, isService)).join('');

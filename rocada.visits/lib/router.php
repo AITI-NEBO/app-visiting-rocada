@@ -132,6 +132,15 @@ switch ($resource) {
         } elseif ($action === 'files') {
             require_once __DIR__ . '/api/visits_files.php';
             handleVisitsFiles($params);
+        } elseif ($action === 'plan') {
+            require_once __DIR__ . '/api/visits_plan.php';
+            handleVisitsPlan($params);
+        } elseif ($action === 'unload-points') {
+            require_once __DIR__ . '/api/visits_plan.php';
+            handleVisitsUnloadPoints($params);
+        } elseif ($action === 'infopovods') {
+            require_once __DIR__ . '/api/visits_infopovods.php';
+            handleVisitsInfopovods($params);
         } else {
             require_once __DIR__ . '/api/visits.php';
             handleVisits($params);
@@ -151,6 +160,11 @@ switch ($resource) {
     case 'config':
         require_once __DIR__ . '/api/config.php';
         handleConfig($params);
+        break;
+
+    case 'deals':
+        require_once __DIR__ . '/api/deals.php';
+        handleDeals($params);
         break;
 
     default:
