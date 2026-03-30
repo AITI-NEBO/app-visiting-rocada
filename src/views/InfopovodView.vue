@@ -111,12 +111,13 @@
       </div>
 
     </div>
-  </div>
 
-  <div class="toast-container" v-if="toastMsg">
-    <div class="toast animate-fade-in-up">
-      <span class="material-symbols-rounded">info</span>
-      {{ toastMsg }}
+    <!-- Toast внутри корневого div -->
+    <div class="toast-container" v-if="toastMsg">
+      <div class="toast animate-fade-in-up">
+        <span class="material-symbols-rounded">info</span>
+        {{ toastMsg }}
+      </div>
     </div>
   </div>
 </template>
