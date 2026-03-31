@@ -3,11 +3,10 @@
     <!-- Step 1: Geo -->
     <div v-if="step === 1" class="step-content animate-fade-in-up">
       <div class="geo-visual">
-        <div v-if="geoDone && geoLat" class="geo-map-container" ref="mapEl"></div>
-        <div v-else class="geo-circle" :class="{ locating: isLocating, error: geoError }">
-          <span class="material-symbols-rounded geo-icon">
-            {{ geoError ? 'location_off' : isLocating ? 'gps_fixed' : 'my_location' }}
-          </span>
+        <div class="geo-map-container" ref="mapEl" :class="{ loading: isLocating }">
+           <div v-if="isLocating" class="map-overlay">
+              <span class="material-symbols-rounded spin overlay-icon">my_location</span>
+           </div>
         </div>
         <p class="geo-text" v-if="!geoDone && !isLocating && !geoError">Подтвердите местоположение для фиксации визита</p>
         <p class="geo-text" v-else-if="isLocating">Определение местоположения…</p>
@@ -199,7 +198,20 @@ onMounted(async () => {
   } finally {
     loadingStatuses.value = false
   }
+  
+  // Инициализируем карту
+  setTimeout(() => {
+    let center = [55.795, 49.1221] // Казань по дефолту
+    const visit = findVisit(props.visitId)
+    if (visit && (visit.lat || visit.geoLat)) {
+       center = [visit.lat || visit.geoLat, visit.lng || visit.geoLng]
+    }
+    initMap(center[0], center[1], !!visit)
+  }, 100)
 })
+
+let mapInstance = null
+let myPlacemark = null
 
 function confirmGeo() {
   isLocating.value = true
@@ -217,14 +229,25 @@ function confirmGeo() {
       geoDone.value    = true
       geoError.value   = ''
       
-      nextTick(() => {
-        initMap(pos.coords.latitude, pos.coords.longitude)
-      })
+      if (mapInstance && window.ymaps) {
+         if (myPlacemark) { mapInstance.geoObjects.remove(myPlacemark) }
+         myPlacemark = new window.ymaps.Placemark([pos.coords.latitude, pos.coords.longitude], { hintContent: 'Вы здесь' }, { preset: 'islands#redDotIcon' })
+         mapInstance.geoObjects.add(myPlacemark)
+         
+         const bounds = mapInstance.geoObjects.getBounds()
+         if (bounds) {
+             mapInstance.setBounds(bounds, { checkZoomRange: true, zoomMargin: 20 })
+         } else {
+             mapInstance.setCenter([pos.coords.latitude, pos.coords.longitude])
+         }
+      } else {
+         initMap(pos.coords.latitude, pos.coords.longitude, true)
+      }
     },
     (err) => {
       isLocating.value = false
       geoError.value   = err.code === 1
-        ? 'Нет разрешения на доступ к местоположению. Разрешите в настройках браузера.'
+        ? 'Нет разрешения на доступ к местоположению. Разрешите в браузера.'
         : err.code === 2
         ? 'Местоположение недоступно. Проверьте GPS или сеть.'
         : 'Превышено время ожидания. Попробуйте ещё раз.'
@@ -233,11 +256,11 @@ function confirmGeo() {
   )
 }
 
-async function initMap(lat, lng) {
+async function initMap(lat, lng, hasVisitPoint = true) {
   await new Promise(resolve => {
     if (window.ymaps) { resolve(); return }
     const script = document.createElement('script')
-    script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=99a2f189-c861-4b8a-90e7-34fa2c7add0e'
+    script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU'
     script.onload = resolve
     document.head.appendChild(script)
   })
@@ -245,14 +268,16 @@ async function initMap(lat, lng) {
   window.ymaps.ready(() => {
     if (!mapEl.value) return
     mapEl.value.innerHTML = ''
-    const map = new window.ymaps.Map(mapEl.value, {
+    mapInstance = new window.ymaps.Map(mapEl.value, {
       center: [lat, lng],
       zoom: 16,
       controls: ['zoomControl']
     }, { suppressMapOpenBlock: true })
     
-    const placemark = new window.ymaps.Placemark([lat, lng], {}, { preset: 'islands#blueIcon' })
-    map.geoObjects.add(placemark)
+    if (hasVisitPoint && lat && lng) {
+      const placemark = new window.ymaps.Placemark([lat, lng], { hintContent: 'Точка визита' }, { preset: 'islands#blueDotIcon' })
+      mapInstance.geoObjects.add(placemark)
+    }
   })
 }
 
@@ -318,13 +343,11 @@ async function submit() {
 <style scoped>
 .step-content { display: flex; flex-direction: column; gap: var(--space-lg); }
 .geo-visual { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); padding: var(--space-xl) 0; width: 100%; }
-.geo-map-container { width: 100%; height: 200px; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
-.geo-circle { width: 100px; height: 100px; border-radius: 50%; background: var(--color-bg-card); border: 3px solid var(--color-border); display: flex; align-items: center; justify-content: center; transition: all var(--transition-slow); box-shadow: var(--shadow-md); }
-.geo-circle.error { border-color: var(--color-danger); background: rgba(255,77,106,0.08); }
-.geo-icon { font-size: 40px; color: var(--color-text-tertiary); transition: color var(--transition-base); }
-.geo-circle.locating .geo-icon { color: var(--color-primary); }
-.geo-circle.done .geo-icon { color: var(--color-success); }
-.geo-circle.error .geo-icon { color: var(--color-danger); }
+.geo-map-container { position: relative; width: 100%; height: 260px; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); border: 2px solid transparent; transition: border-color var(--transition-fast); }
+.geo-map-container.loading { border-color: var(--color-primary); }
+.map-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(2px); }
+.overlay-icon { font-size: 40px; color: var(--color-primary); }
+
 .geo-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); text-align: center; max-width: 280px; }
 .geo-ok { color: var(--color-success); font-weight: var(--font-weight-semibold); }
 .geo-err { color: var(--color-danger); font-weight: var(--font-weight-semibold); }
