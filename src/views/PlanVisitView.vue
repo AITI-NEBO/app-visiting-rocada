@@ -146,13 +146,16 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import { useVisits } from '../composables/useVisits'
 import { useApi } from '../composables/useApi'
 
+const route = useRoute()
+
 const api = useApi()
-const { fetchUnloadPoints, planVisitApi } = useVisits()
+const { fetchUnloadPoints, planVisitApi, loadVisits } = useVisits()
 
 const step = ref('search')
 const query = ref('')
@@ -179,6 +182,13 @@ function showToast(msg) {
 const tomorrow = new Date()
 tomorrow.setDate(tomorrow.getDate() + 1)
 planDate.value = tomorrow.toISOString().split('T')[0]
+
+onMounted(() => {
+  if (route.query.q) {
+    query.value = route.query.q;
+    search();
+  }
+})
 
 async function search() {
   if (!query.value.trim()) return
@@ -236,6 +246,7 @@ async function confirmPlan() {
       visit_date: planDate.value,
       visit_time: planTime.value,
     })
+    await loadVisits(true) // сразу подгружаем визиты, чтобы они обновились в кэше
     step.value = 'done'
   } catch (e) {
     console.error('[PlanView] plan error:', e)

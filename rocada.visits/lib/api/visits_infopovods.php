@@ -192,6 +192,7 @@ function saveInfopovods(int $dealId, int $userId, array $bodyData): void
             $hlData['UF_PHONE_SMS'] = trim($item['phone_sms']);
         }
         if (!empty($item['product_xml_id'])) {
+            // Поле UF_PRODUCT_XML_ID (тип: строка) должно быть создано в HL-блоке 12 в Bitrix-администрировании
             $hlData['UF_PRODUCT_XML_ID'] = trim($item['product_xml_id']);
         }
 

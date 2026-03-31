@@ -11,11 +11,21 @@ use Bitrix\Crm\DealTable;
 
 function handleVisits(array $params): void
 {
+    $userId = requireAuth();
+    $id     = $params['id'] ?? null;
+
+    if ($params['method'] === 'POST') {
+        if ($id !== null) {
+            pwaSendError('Method Not Allowed', 405);
+        }
+        createVisit($userId, $params);
+        return;
+    }
+
     if ($params['method'] !== 'GET') {
         pwaSendError('Method Not Allowed', 405);
     }
-    $userId = requireAuth();
-    $id     = $params['id'];
+
     $id !== null ? visitDetail($userId, $id, $params) : visitsList($userId, $params);
 }
 
@@ -46,26 +56,38 @@ function visitsList(int $userId, array $params): void
     } elseif ($period === 'today') {
         $stages = $dirCfg['stages_today']    ?? [];
     } elseif ($period === 'completed') {
-        // Берём все стадии из result_statuses направления (там поле 'stage' — CRM стадия завершения)
         $resultStagesList = [];
         foreach (($dirCfg['result_statuses'] ?? []) as $rs) {
             if (!empty($rs['stage'])) {
                 $resultStagesList[] = trim($rs['stage']);
             }
         }
-        // Также добавляем из глобальных настроек если они заполнены
         $stages = array_unique(array_filter(array_merge($resultStagesList, $stagesSuccess, $stagesFail)));
+    } elseif ($period === 'all') {
+        // Для period=all используем дефолтный фильтр по неудаленным/незакрытым. 
+        // Если нужны конкретные стадии, берем все, что есть в 'stages_today' + 'stages_tomorrow' + начальные
+        $stages = array_unique(array_filter(array_merge($dirCfg['stages_today'] ?? [], $dirCfg['stages_tomorrow'] ?? [])));
     }
 
-    if (empty($stages)) {
-        pwaSendError($period === 'completed' ? 'Стадии завершения не настроены (укажите поле Stage в статусах завершения направления)' : 'Стадии не настроены для выбранного периода', 422);
+    if (empty($stages) && $period !== 'all') {
+        pwaSendError($period === 'completed' ? 'Стадии завершения не настроены' : 'Стадии не настроены для выбранного периода', 422);
     }
 
     $latF    = $dirCfg['lat_field'] ?? '';
     $lngF    = $dirCfg['lng_field'] ?? '';
     $vdF     = $dirCfg['visit_date_field'] ?? '';
 
-    $filter  = ['STAGE_ID' => $stages, 'ASSIGNED_BY_ID' => $userId];
+    $filter  = ['ASSIGNED_BY_ID' => $userId];
+    if (!empty($stages)) {
+        $filter['STAGE_ID'] = $stages;
+    }
+    if ($period === 'all') {
+        $filter['!CLOSED'] = 'Y';
+    }
+
+    if (!empty($q['company_id'])) {
+        $filter['COMPANY_ID'] = (int)$q['company_id'];
+    }
 
     // Фильтр по воронкам (CATEGORY_ID) если указаны в настройках направления
     $pipelines = array_map('intval', $dirCfg['pipelines'] ?? []);
@@ -94,7 +116,7 @@ function visitsList(int $userId, array $params): void
             'COMPANY_ID', 'CONTACT_ID', 'ASSIGNED_BY_ID',
             'BEGINDATE', 'CLOSEDATE', 'DATE_MODIFY', 'DATE_CREATE',
             'OPPORTUNITY', 'CURRENCY_ID', 'COMMENTS',
-            $latF, $lngF, $vdF,
+            $latF, $lngF, $vdF, 'UF_UNLOAD_DOCS', 'UF_*'
         ],
         $dealFields   // доп. UF-поля направления
     )));
@@ -106,6 +128,37 @@ function visitsList(int $userId, array $params): void
         'limit'  => $perPage,
         'offset' => ($page - 1) * $perPage,
     ])->fetchAll();
+
+    // Подгрузка координат из IBLOCK 206 (Пункты разгрузки)
+    $unloadCoords = [];
+    $unloadDocsIds = array_filter(array_column($rows, 'UF_UNLOAD_DOCS'));
+    if (!empty($unloadDocsIds) && \Bitrix\Main\Loader::includeModule('iblock')) {
+        $elements = \CIBlockElement::GetList(
+            [],
+            ['ID' => array_unique($unloadDocsIds), 'IBLOCK_ID' => 206],
+            false,
+            false,
+            ['ID', 'PROPERTY_LATITUDE', 'PROPERTY_LONGITUDE']
+        );
+        while ($el = $elements->Fetch()) {
+            $latVal = trim((string)($el['PROPERTY_LATITUDE_VALUE'] ?? ''));
+            $lngVal = trim((string)($el['PROPERTY_LONGITUDE_VALUE'] ?? ''));
+            if ($latVal !== '' && $lngVal !== '') {
+                $unloadCoords[(int)$el['ID']] = [
+                    'lat' => (float)$latVal,
+                    'lng' => (float)$lngVal,
+                ];
+            }
+        }
+    }
+    foreach ($rows as &$r) {
+        $udid = (int)($r['UF_UNLOAD_DOCS'] ?? 0);
+        if ($udid && isset($unloadCoords[$udid])) {
+            $r['_UNLOAD_LAT'] = $unloadCoords[$udid]['lat'];
+            $r['_UNLOAD_LNG'] = $unloadCoords[$udid]['lng'];
+        }
+    }
+    unset($r);
 
     $total = DealTable::getCount($filter);
 
@@ -150,6 +203,54 @@ function visitsList(int $userId, array $params): void
     ]);
 }
 
+// ── Создание визита ───────────────────────────────────────────────────────────
+function createVisit(int $userId, array $params): void
+{
+    $mid    = $params['moduleId'];
+    $body   = $params['body'] ?? [];
+    $dirId  = $body['direction'] ?? 'sales';
+    $dirCfg = getDirectionConfig($dirId, $mid);
+
+    $companyId = (int)($body['company_id'] ?? 0);
+    $pointId   = (int)($body['point_id'] ?? 0);
+    $visitDate = trim($body['visit_date'] ?? '');
+    $visitTime = trim($body['visit_time'] ?? '10:00');
+
+    if ($companyId <= 0) {
+        pwaSendError('Не указана компания', 400);
+    }
+
+    $comp = \CCrmCompany::GetByID($companyId);
+    $title = $comp ? 'Визит: ' . $comp['TITLE'] : 'Новый визит';
+
+    $fields = [
+        'TITLE' => $title,
+        'COMPANY_ID' => $companyId,
+        'ASSIGNED_BY_ID' => $userId,
+        // Определяем воронку и первую стадию из неё
+        'CATEGORY_ID' => !empty($dirCfg['pipelines']) ? (int)reset($dirCfg['pipelines']) : 0,
+    ];
+
+    $vdf = $dirCfg['visit_date_field'] ?? '';
+    if ($vdf && $visitDate) {
+        $dtObj = new \Bitrix\Main\Type\DateTime($visitDate . ' ' . $visitTime . ':00', 'Y-m-d H:i:s');
+        $fields[$vdf] = $dtObj;
+    }
+
+    if ($pointId > 0) {
+        $fields['UF_UNLOAD_DOCS'] = $pointId;
+    }
+
+    $deal = new \CCrmDeal(false);
+    $dealId = $deal->Add($fields, true, ['DISABLE_USER_FIELD_CHECK' => true]);
+
+    if (!$dealId) {
+        pwaSendError($deal->LAST_ERROR ?: 'Ошибка создания сделки', 500);
+    }
+
+    pwaSendJson(['success' => true, 'deal_id' => $dealId]);
+}
+
 // ── Детали визита ─────────────────────────────────────────────────────────────
 function visitDetail(int $userId, int $dealId, array $params): void
 {
@@ -169,6 +270,18 @@ function visitDetail(int $userId, int $dealId, array $params): void
 
     if (!$deal) {
         pwaSendError('Визит не найден или нет доступа', 404);
+    }
+
+    if (!empty($deal['UF_UNLOAD_DOCS']) && \Bitrix\Main\Loader::includeModule('iblock')) {
+        $el = \CIBlockElement::GetList([], ['ID' => (int)$deal['UF_UNLOAD_DOCS'], 'IBLOCK_ID' => 206], false, false, ['ID', 'PROPERTY_LATITUDE', 'PROPERTY_LONGITUDE'])->Fetch();
+        if ($el) {
+            $latVal = trim((string)($el['PROPERTY_LATITUDE_VALUE'] ?? ''));
+            $lngVal = trim((string)($el['PROPERTY_LONGITUDE_VALUE'] ?? ''));
+            if ($latVal !== '' && $lngVal !== '') {
+                $deal['_UNLOAD_LAT'] = (float)$latVal;
+                $deal['_UNLOAD_LNG'] = (float)$lngVal;
+            }
+        }
     }
 
     pwaSendJson([
@@ -240,9 +353,9 @@ function formatDeal(array $d, array $cfg): array
         'opportunity' => (float)($d['OPPORTUNITY']  ?? 0),
         'currency'    => $d['CURRENCY_ID'] ?? 'RUB',
         'comments'    => $d['COMMENTS']    ?? '',
-        'lat'         => $lf && !empty($d[$lf]) ? (float)$d[$lf] : null,
-        'lng'         => $rf && !empty($d[$rf]) ? (float)$d[$rf] : null,
-        'geo_set'     => $lf && !empty($d[$lf]),
+        'lat'         => $d['_UNLOAD_LAT'] ?? (($lf && !empty($d[$lf])) ? (float)$d[$lf] : null),
+        'lng'         => $d['_UNLOAD_LNG'] ?? (($rf && !empty($d[$rf])) ? (float)$d[$rf] : null),
+        'geo_set'     => !empty($d['_UNLOAD_LAT']) || ($lf && !empty($d[$lf])),
         'fields'      => $extraFields,   // доп. поля направления
         'field_codes' => array_values($dealFieldCodes), // список кодов для фронта
     ];

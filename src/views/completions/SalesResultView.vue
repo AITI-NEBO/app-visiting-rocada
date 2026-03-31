@@ -3,9 +3,10 @@
     <!-- Step 1: Geo -->
     <div v-if="step === 1" class="step-content animate-fade-in-up">
       <div class="geo-visual">
-        <div class="geo-circle" :class="{ locating: isLocating, done: geoDone && geoLat, error: geoError }">
+        <div v-if="geoDone && geoLat" class="geo-map-container" ref="mapEl"></div>
+        <div v-else class="geo-circle" :class="{ locating: isLocating, error: geoError }">
           <span class="material-symbols-rounded geo-icon">
-            {{ geoDone && geoLat ? 'check_circle' : geoError ? 'location_off' : isLocating ? 'gps_fixed' : 'my_location' }}
+            {{ geoError ? 'location_off' : isLocating ? 'gps_fixed' : 'my_location' }}
           </span>
         </div>
         <p class="geo-text" v-if="!geoDone && !isLocating && !geoError">Подтвердите местоположение для фиксации визита</p>
@@ -14,7 +15,7 @@
           <p class="geo-text geo-err">Не удалось определить местоположение</p>
           <p class="geo-hint">{{ geoError }}</p>
         </div>
-        <div v-else class="geo-success">
+        <div v-if="geoDone && geoLat" class="geo-success" style="margin-top: 8px;">
           <p class="geo-text geo-ok">Геолокация подтверждена!</p>
           <span class="geo-coords">{{ geoLat }}, {{ geoLng }}</span>
         </div>
@@ -95,26 +96,7 @@
         <textarea v-model="comment" class="note-textarea" rows="3" placeholder="Опишите итог визита…"></textarea>
       </div>
 
-      <!-- Photos -->
-      <div class="photo-section">
-        <h4 class="note-title">
-          <span class="material-symbols-rounded" style="font-size:18px">photo_camera</span>
-          Фото (опционально)
-        </h4>
-        <div class="photo-grid">
-          <div v-for="(p, i) in photos" :key="i" class="photo-thumb">
-            <img :src="p.preview" alt="Фото" />
-            <button class="photo-remove" @click="photos.splice(i,1)">
-              <span class="material-symbols-rounded">close</span>
-            </button>
-          </div>
-          <label class="photo-add">
-            <span class="material-symbols-rounded">add_a_photo</span>
-            <span>Добавить</span>
-            <input type="file" accept="image/*" capture="environment" @change="handlePhoto" hidden />
-          </label>
-        </div>
-      </div>
+      <!-- Removed photos section based on user request (only shown in service view) -->
 
       <button class="primary-btn" :disabled="!selectedId || submitting" @click="submit">
         <span v-if="submitting" class="material-symbols-rounded spin">progress_activity</span>
@@ -156,6 +138,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
+import { nextTick } from 'vue'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
@@ -164,6 +147,7 @@ const router      = useRouter()
 const api         = useApi()
 const { currentDirection } = useDirections()
 const { findVisit, loadVisits } = useVisits()
+const mapEl       = ref(null)
 
 // Расчёт расстояния по формуле Haversine (возвращает метры)
 function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -186,7 +170,6 @@ const statuses      = ref([])
 const loadingStatuses = ref(true)
 const selectedId    = ref(null)
 const comment       = ref('')
-const photos        = ref([])
 const submitting    = ref(false)
 const errorMsg      = ref('')
 
@@ -233,6 +216,10 @@ function confirmGeo() {
       isLocating.value = false
       geoDone.value    = true
       geoError.value   = ''
+      
+      nextTick(() => {
+        initMap(pos.coords.latitude, pos.coords.longitude)
+      })
     },
     (err) => {
       isLocating.value = false
@@ -246,20 +233,36 @@ function confirmGeo() {
   )
 }
 
+async function initMap(lat, lng) {
+  await new Promise(resolve => {
+    if (window.ymaps) { resolve(); return }
+    const script = document.createElement('script')
+    script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=99a2f189-c861-4b8a-90e7-34fa2c7add0e'
+    script.onload = resolve
+    document.head.appendChild(script)
+  })
+
+  window.ymaps.ready(() => {
+    if (!mapEl.value) return
+    mapEl.value.innerHTML = ''
+    const map = new window.ymaps.Map(mapEl.value, {
+      center: [lat, lng],
+      zoom: 16,
+      controls: ['zoomControl']
+    }, { suppressMapOpenBlock: true })
+    
+    const placemark = new window.ymaps.Placemark([lat, lng], {}, { preset: 'islands#blueIcon' })
+    map.geoObjects.add(placemark)
+  })
+}
+
 function skipGeo() {
   isLocating.value = false
   geoDone.value    = true  // пропуск — идём дальше без координат
   step.value       = 2
 }
 
-function handlePhoto(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = ev => photos.value.push({ file, preview: ev.target.result })
-  reader.readAsDataURL(file)
-  e.target.value = ''
-}
+
 
 async function submit() {
   if (!selectedId.value) return
@@ -272,13 +275,6 @@ async function submit() {
         lat: geoLat.value, lng: geoLng.value,
         direction: currentDirection.value?.id,
       })
-    }
-    // 2. Загрузка фото
-    for (const p of photos.value) {
-      const fd = new FormData()
-      fd.append('file', p.file)
-      fd.append('direction', currentDirection.value?.id || '')
-      await api.apiPostForm(`api/visits/${props.visitId}/files`, fd)
     }
     // 3. Рассчитываем расстояние от точки визита (если у визита есть координаты)
     let distanceM = undefined
@@ -321,10 +317,9 @@ async function submit() {
 
 <style scoped>
 .step-content { display: flex; flex-direction: column; gap: var(--space-lg); }
-.geo-visual { display: flex; flex-direction: column; align-items: center; gap: var(--space-base); padding: var(--space-xl) 0; }
+.geo-visual { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); padding: var(--space-xl) 0; width: 100%; }
+.geo-map-container { width: 100%; height: 200px; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
 .geo-circle { width: 100px; height: 100px; border-radius: 50%; background: var(--color-bg-card); border: 3px solid var(--color-border); display: flex; align-items: center; justify-content: center; transition: all var(--transition-slow); box-shadow: var(--shadow-md); }
-.geo-circle.locating { border-color: var(--color-primary); animation: pulse 1.5s ease-in-out infinite; }
-.geo-circle.done { border-color: var(--color-success); background: rgba(0,196,140,0.1); }
 .geo-circle.error { border-color: var(--color-danger); background: rgba(255,77,106,0.08); }
 .geo-icon { font-size: 40px; color: var(--color-text-tertiary); transition: color var(--transition-base); }
 .geo-circle.locating .geo-icon { color: var(--color-primary); }
@@ -343,11 +338,12 @@ async function submit() {
 .secondary-btn { width: 100%; height: 48px; border-radius: var(--radius-lg); background: var(--color-bg-card); color: var(--color-text-primary); font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); border: 1px solid var(--color-border); text-decoration: none; transition: transform var(--transition-fast); }
 
 .step-title { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
-.result-option { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-base); background: var(--color-bg-card); border-radius: var(--radius-lg); border: 2px solid var(--color-border); cursor: pointer; transition: all var(--transition-fast); }
+.result-options { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.result-option { display: flex; align-items: center; text-align: left; gap: var(--space-md); padding: 16px var(--space-base); background: var(--color-bg-card); border-radius: var(--radius-lg); border: 2px solid var(--color-border); cursor: pointer; transition: all var(--transition-fast); width: 100%; }
 .result-option.selected { background: rgba(0,212,170,0.05); }
 .result-option.is-success-status { border-color: rgba(0,196,140,0.3); }
 .result-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
-.result-option-label { flex: 1; font-size: var(--font-size-base); font-weight: var(--font-weight-medium); }
+.result-option-label { flex: 1; font-size: var(--font-size-base); font-weight: var(--font-weight-medium); line-height: 1.3; }
 .result-check { font-size: 22px; color: var(--color-accent); }
 .success-badge { display: flex; align-items: center; background: rgba(0,196,140,0.15); color: var(--color-success); border-radius: 6px; padding: 2px 4px; flex-shrink: 0; }
 .success-hint { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(0,196,140,0.1); border: 1px solid rgba(0,196,140,0.3); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--color-success); }
@@ -357,13 +353,7 @@ async function submit() {
 .note-textarea:focus { border-color: var(--color-primary); }
 .note-textarea::placeholder { color: var(--color-text-tertiary); }
 
-.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); }
-.photo-thumb { position: relative; aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--color-border); }
-.photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.photo-remove { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.photo-remove .material-symbols-rounded { font-size: 16px; }
-.photo-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; aspect-ratio: 1; border-radius: var(--radius-md); border: 2px dashed var(--color-border); cursor: pointer; color: var(--color-text-tertiary); font-size: var(--font-size-xs); }
-.photo-add .material-symbols-rounded { font-size: 28px; }
+
 
 .done-visual { display: flex; flex-direction: column; align-items: center; gap: var(--space-md); padding: var(--space-xl) 0; }
 .done-icon { font-size: 64px; color: var(--color-success); }

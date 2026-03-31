@@ -83,19 +83,30 @@ function handleClients(array $params): void
     $dirId   = $q['direction'] ?? 'sales';
     $search  = trim($q['search']   ?? '');
     $page    = max(1, (int)($q['page']     ?? 1));
-    $perPage = min(100, max(1, (int)($q['per_page'] ?? 50)));
+    $perPage = min(200, max(1, (int)($q['per_page'] ?? 100)));
 
     $dirCfg = getDirectionConfig($dirId, $mid);
-    $latF   = $dirCfg['lat_field'] ?? '';
-    $lngF   = $dirCfg['lng_field'] ?? '';
+    $latF   = $dirCfg['lat_field']        ?? '';
+    $lngF   = $dirCfg['lng_field']        ?? '';
+    $vdF    = $dirCfg['visit_date_field'] ?? '';
 
-    $stages = array_merge($dirCfg['stages_today'] ?? [], $dirCfg['stages_tomorrow'] ?? []);
-    $filter = ['ASSIGNED_BY_ID' => $userId];
-    if (!empty($stages)) {
-        $filter['STAGE_ID'] = $stages;
+    // Стадии уже запланированных визитов (сегодня + завтра) — для флага is_planned
+    $plannedStages = array_unique(array_merge(
+        $dirCfg['stages_today']    ?? [],
+        $dirCfg['stages_tomorrow'] ?? []
+    ));
+
+    // Для вкладки «Клиенты» (и общей карты) — показываем все сделки без фильтра по ответственному,
+    // чтобы менеджер видел все доступные компании и мог сделать визит "по пути"
+    $filter = ['!CLOSED' => 'Y'];
+
+    // Фильтр по воронкам (CATEGORY_ID) если указаны в настройках направления
+    $pipelines = array_map('intval', $dirCfg['pipelines'] ?? []);
+    if (!empty($pipelines)) {
+        $filter['CATEGORY_ID'] = $pipelines;
     }
 
-    $select = array_unique(array_filter(['ID', 'TITLE', 'COMPANY_ID', $latF, $lngF]));
+    $select = array_unique(array_filter(['ID', 'TITLE', 'COMPANY_ID', 'STAGE_ID', $latF, $lngF, $vdF, 'UF_UNLOAD_DOCS', 'UF_*']));
 
     $rows = DealTable::getList([
         'filter' => $filter,
@@ -103,6 +114,29 @@ function handleClients(array $params): void
         'limit'  => $perPage,
         'offset' => ($page - 1) * $perPage,
     ])->fetchAll();
+
+    // Подгрузка координат из IBLOCK 206 (Пункты разгрузки), если они есть у сделки
+    $unloadCoords = [];
+    $unloadDocsIds = array_filter(array_column($rows, 'UF_UNLOAD_DOCS'));
+    if (!empty($unloadDocsIds) && \Bitrix\Main\Loader::includeModule('iblock')) {
+        $elements = \CIBlockElement::GetList(
+            [],
+            ['ID' => array_unique($unloadDocsIds), 'IBLOCK_ID' => 206],
+            false,
+            false,
+            ['ID', 'PROPERTY_LATITUDE', 'PROPERTY_LONGITUDE']
+        );
+        while ($el = $elements->Fetch()) {
+            $latVal = trim((string)($el['PROPERTY_LATITUDE_VALUE'] ?? ''));
+            $lngVal = trim((string)($el['PROPERTY_LONGITUDE_VALUE'] ?? ''));
+            if ($latVal !== '' && $lngVal !== '') {
+                $unloadCoords[(int)$el['ID']] = [
+                    'lat' => (float)$latVal,
+                    'lng' => (float)$lngVal,
+                ];
+            }
+        }
+    }
 
     $seen    = [];
     $clients = [];
@@ -113,12 +147,33 @@ function handleClients(array $params): void
         if (isset($seen[$key])) continue;
         $seen[$key] = true;
 
+        $stageId   = $row['STAGE_ID'] ?? '';
+        $isPlanned = !empty($plannedStages) && in_array($stageId, $plannedStages, true);
+
+        // Дата визита из UF-поля направления
+        $visitDate = null;
+        if ($vdF && !empty($row[$vdF])) {
+            $raw = $row[$vdF];
+            if ($raw instanceof \Bitrix\Main\Type\DateTime || $raw instanceof \Bitrix\Main\Type\Date) {
+                $visitDate = $raw->format('Y-m-d');
+            } else {
+                $visitDate = (string)$raw;
+            }
+        }
+
+        $unloadDocId = (int)($row['UF_UNLOAD_DOCS'] ?? 0);
+        $finalLat = $unloadCoords[$unloadDocId]['lat'] ?? (($latF && !empty($row[$latF])) ? (float)$row[$latF] : null);
+        $finalLng = $unloadCoords[$unloadDocId]['lng'] ?? (($lngF && !empty($row[$lngF])) ? (float)$row[$lngF] : null);
+
         $item = [
             'deal_id'    => (int)$row['ID'],
             'deal_title' => $row['TITLE'] ?? '',
             'company_id' => $compId ?: null,
-            'lat'        => ($latF && !empty($row[$latF])) ? (float)$row[$latF] : null,
-            'lng'        => ($lngF && !empty($row[$lngF])) ? (float)$row[$lngF] : null,
+            'stage_id'   => $stageId,
+            'lat'        => $finalLat,
+            'lng'        => $finalLng,
+            'visit_date' => $visitDate,
+            'is_planned' => $isPlanned,
         ];
 
         if ($compId) {
@@ -138,5 +193,5 @@ function handleClients(array $params): void
         $clients[] = $item;
     }
 
-    pwaSendJson(['items' => $clients, 'total' => count($clients), 'page' => $page, 'per_page' => $perPage]);
+    pwaSendJson(['items' => $clients, 'total' => count($rows), 'page' => $page, 'per_page' => $perPage]);
 }

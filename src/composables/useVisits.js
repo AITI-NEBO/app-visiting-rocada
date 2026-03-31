@@ -81,11 +81,11 @@ export function useVisits() {
 
             const items = data.items || []
             if (period === 'today') {
-                visitsToday.value = [...visitsToday.value, ...items]
+                visitsToday.value = [...visitsToday.value, ...items.filter(i => !visitsToday.value.some(v => v.id === i.id))]
             } else if (period === 'tomorrow') {
-                visitsTomorrow.value = [...visitsTomorrow.value, ...items]
+                visitsTomorrow.value = [...visitsTomorrow.value, ...items.filter(i => !visitsTomorrow.value.some(v => v.id === i.id))]
             } else if (period === 'completed') {
-                visitsCompleted.value = [...visitsCompleted.value, ...items]
+                visitsCompleted.value = [...visitsCompleted.value, ...items.filter(i => !visitsCompleted.value.some(v => v.id === i.id))]
             }
 
             pagination.value[period] = {

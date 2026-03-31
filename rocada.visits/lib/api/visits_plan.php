@@ -108,6 +108,10 @@ function handleVisitsPlan(array $params): void
         $visitDateField = Option::get('rocada.telegram', 'visit_date_field', 'UF_CRM_1670850308849');
     }
 
+    // Отключаем проверку на уже запланированный визит
+    // В логике бизнеса: если визит уже был запланирован (например, на месяц вперёд), 
+    // менеджер должен иметь возможность перенести его на сегодня, чтобы закрыть его.
+
     // Форматируем дату
     $visitDateTime = '';
     try {
@@ -117,15 +121,49 @@ function handleVisitsPlan(array $params): void
         pwaSendError('Не удалось отформатировать дату и время', 400);
     }
 
+    // Получаем текущие данные сделки, чтобы узнать CATEGORY_ID
+    $dealCurrent = DealTable::getList([
+        'filter' => ['=ID' => $dealId],
+        'select' => ['CATEGORY_ID', 'STAGE_ID']
+    ])->fetch();
+
+    $categoryId = (int)($dealCurrent['CATEGORY_ID'] ?? 0);
+    $targetStageId = '';
+
+    // Ищем подходящее направление по воронке сделки, чтобы узнать рабочую стадию (stages_today)
+    require_once __DIR__ . '/../helpers/directions.php';
+    $directions = getAllDirections($moduleId);
+    $matchedDir = $directions[0] ?? null; // по умолчанию первое направление
+
+    foreach ($directions as $dir) {
+        $pipelines = array_map('intval', $dir['pipelines'] ?? []);
+        if (in_array($categoryId, $pipelines, true)) {
+            $matchedDir = $dir;
+            break;
+        }
+    }
+
+    if ($matchedDir && !empty($matchedDir['stages_today'])) {
+        // Берём первую рабочую стадию на сегодня
+        $targetStageId = $matchedDir['stages_today'][0];
+    }
+
+    // Собираем поля для обновления
+    $updateFields = [
+        'UF_UNLOAD_DOCS' => $pointId,
+        $visitDateField  => $visitDateTime,
+    ];
+
+    if (!empty($targetStageId) && $dealCurrent['STAGE_ID'] !== $targetStageId) {
+        $updateFields['STAGE_ID'] = $targetStageId;
+    }
+
     if (!Loader::includeModule('crm')) {
         pwaSendError('Module CRM not installed', 500);
     }
 
-    // Обновляем сделку точно как в rocada.telegram plan_visit
-    $updateResult = DealTable::update($dealId, [
-        'UF_UNLOAD_DOCS' => $pointId,
-        $visitDateField  => $visitDateTime,
-    ]);
+    // Обновляем сделку, двигая стадию и записывая новые данные
+    $updateResult = DealTable::update($dealId, $updateFields);
 
     if ($updateResult->isSuccess()) {
         pwaSendJson(['deal_id' => $dealId, 'message' => 'Визит успешно запланирован']);

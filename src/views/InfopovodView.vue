@@ -21,36 +21,6 @@
       </div>
 
       <div v-else class="infopovod-container">
-        <!-- Voice Input Block -->
-        <div class="card voice-card glass">
-          <h3 class="card-title">Голосовой ввод</h3>
-          <p class="card-desc">Продиктуйте итоги по всем инфоповодам, и AI автоматически заполнит поля.</p>
-
-          <button v-if="!isRecording" class="voice-btn" @click="startRecording">
-            <span class="material-symbols-rounded">mic</span>
-            <span class="font-bold">Начать запись</span>
-          </button>
-          
-          <div v-else class="recording-state">
-            <div class="recording-indicator">
-              <span class="rec-dot animate-pulse"></span>
-              <span class="rec-time">{{ formatTime(recordSeconds) }}</span>
-            </div>
-            <div class="recording-actions">
-              <button class="stop-btn" @click="stopRecording">
-                <span class="material-symbols-rounded">stop_circle</span>
-                Остановить и обработать
-              </button>
-              <button class="cancel-btn" @click="cancelRecording">Удалить</button>
-            </div>
-          </div>
-
-          <div v-if="isProcessingAudio" class="audio-processing">
-            <span class="material-symbols-rounded spin">auto_awesome</span>
-            AI анализирует голос...
-          </div>
-        </div>
-
         <!-- Form Block -->
         <form @submit.prevent="submitForm" class="povod-form">
           <div v-for="item in items" :key="item.id" class="card povod-card glass">
@@ -108,6 +78,18 @@
             {{ submitting ? 'Сохранение...' : 'Отправить результаты' }}
           </button>
         </form>
+
+        <!-- Voice Input Block (Moved & Disabled) -->
+        <div class="card voice-card glass in-development">
+          <div class="dev-badge">В разработке</div>
+          <h3 class="card-title text-gray-400">Голосовой ввод</h3>
+          <p class="card-desc text-gray-500">Продиктуйте итоги по всем инфоповодам, и AI автоматически заполнит поля.</p>
+
+          <button class="voice-btn disabled-btn" disabled>
+            <span class="material-symbols-rounded">mic_off</span>
+            <span class="font-bold">Начать запись</span>
+          </button>
+        </div>
       </div>
 
     </div>
@@ -427,6 +409,34 @@ function finish() {
 .mt-4 { margin-top: 16px; }
 
 .primary-btn { padding: 12px 24px; border-radius: var(--radius-lg); background: var(--color-primary); color: white; border: none; cursor: pointer; font-weight: 500; }
+
+.in-development {
+  opacity: 0.6;
+  filter: grayscale(100%);
+  position: relative;
+  pointer-events: none;
+}
+
+.dev-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-tertiary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  border: 1px solid var(--color-border);
+}
+
+.disabled-btn {
+  background: var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
+  cursor: not-allowed;
+  opacity: 1 !important;
+}
 
 .toast-container { position: fixed; bottom: 80px; left: 0; right: 0; display: flex; justify-content: center; z-index: 100; pointer-events: none; }
 .toast { background: var(--color-text-primary); color: var(--color-bg-base); padding: 12px 20px; border-radius: 30px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
