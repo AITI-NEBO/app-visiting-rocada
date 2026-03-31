@@ -3,10 +3,11 @@
     <!-- Step 1: Geo -->
     <div v-if="step === 1" class="step-content animate-fade-in-up">
       <div class="geo-visual">
-        <div class="geo-map-container" ref="mapEl" :class="{ loading: isLocating }">
-           <div v-if="isLocating" class="map-overlay">
-              <span class="material-symbols-rounded spin overlay-icon">my_location</span>
-           </div>
+        <div style="position: relative; width: 100%;">
+          <div class="geo-map-container" ref="mapEl" :class="{ loading: isLocating }"></div>
+          <div v-if="isLocating" class="map-overlay" style="border-radius: var(--radius-lg);">
+             <span class="material-symbols-rounded spin overlay-icon">my_location</span>
+          </div>
         </div>
         <p class="geo-text" v-if="!geoDone && !isLocating && !geoError">Подтвердите местоположение для фиксации визита</p>
         <p class="geo-text" v-else-if="isLocating">Определение местоположения…</p>
