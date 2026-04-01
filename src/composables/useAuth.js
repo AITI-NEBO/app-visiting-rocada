@@ -73,11 +73,11 @@ export function useAuth() {
     try {
       tokenData = JSON.parse(rawText)
     } catch {
-      console.error('[OAuth] Token endpoint вернул не-JSON:', rawText.slice(0, 300))
+      const preview = rawText.slice(0, 500).replace(/\s+/g, ' ')
+      console.error('[OAuth] Token endpoint вернул не-JSON:', preview)
       throw new Error(
-        'Ошибка обмена кода на токен.\n' +
-        'Вероятная причина: Redirect URI в настройках приложения Б24 не совпадает.\n' +
-        `Ожидаемый URI: ${REDIRECT}`
+        `Ошибка обмена кода на токен (HTTP ${tokenRes.status}).\n` +
+        `Ответ сервера: ${preview || '(пусто)'}`
       )
     }
 
