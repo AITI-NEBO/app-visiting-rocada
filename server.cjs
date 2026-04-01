@@ -7,12 +7,19 @@ const PORT = process.env.PORT || 8080;
 // ── Универсальная вспомогательная функция ────────────────────────────────────
 async function proxyFetch(targetUrl, req, res) {
   try {
+    const headers = {
+      'Accept': req.headers['accept'] || '*/*',
+    };
+    if (req.headers['authorization']) {
+      headers['Authorization'] = req.headers['authorization'];
+    }
+    if (req.headers['content-type']) {
+      headers['Content-Type'] = req.headers['content-type'];
+    }
+
     const upstream = await fetch(targetUrl, {
       method: req.method,
-      headers: {
-        'Accept': req.headers['accept'] || '*/*',
-        'Content-Type': req.headers['content-type'] || 'application/json',
-      },
+      headers,
     });
     const text = await upstream.text();
     res
