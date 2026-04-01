@@ -1,61 +1,62 @@
 const express = require('express');
 const path = require('path');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// ── Proxy: /b24api → office.rocadatech.ru (наш модуль визитов) ─────────────
-app.use(
-  '/b24api',
-  createProxyMiddleware({
-    target: 'https://office.rocadatech.ru',
-    changeOrigin: true,
-    secure: false,
-    pathRewrite: (path) => {
-      const [pathname, qs] = path.split('?');
-      const route = pathname.replace(/^\/b24api\/?/, '');
-      const query = qs ? `route=${route}&${qs}` : `route=${route}`;
-      return `/local/modules/rocada.visits/lib/router.php?${query}`;
-    },
-  })
-);
-
-// ── Native fetch: /b24oauth/token → oauth.bitrix.info/oauth/token ──────────
-// Используем нативный fetch вместо прокси — http-proxy-middleware v3
-// иногда возвращает пустое тело для HTTPS-ответов.
-app.get('/b24oauth/token/', async (req, res) => {
+// ── Универсальная вспомогательная функция ────────────────────────────────────
+async function proxyFetch(targetUrl, req, res) {
   try {
-    const params = new URLSearchParams(req.query).toString();
-    const url = `https://oauth.bitrix.info/oauth/token/?${params}`;
-    console.log('[/b24oauth] →', url);
-    const upstream = await fetch(url);
+    const upstream = await fetch(targetUrl, {
+      method: req.method,
+      headers: {
+        'Accept': req.headers['accept'] || '*/*',
+        'Content-Type': req.headers['content-type'] || 'application/json',
+      },
+    });
     const text = await upstream.text();
-    console.log('[/b24oauth] ←', upstream.status, text.slice(0, 200));
-    res.status(upstream.status)
-       .set('Content-Type', upstream.headers.get('Content-Type') || 'application/json')
-       .send(text);
+    res
+      .status(upstream.status)
+      .set('Content-Type', upstream.headers.get('Content-Type') || 'application/json')
+      .send(text);
   } catch (err) {
-    console.error('[/b24oauth] fetch error:', err.message);
+    console.error(`[proxy] fetch error for ${targetUrl}:`, err.message);
     res.status(502).json({ error: 'proxy_error', message: err.message });
   }
+}
+
+// ── /b24oauth/token → oauth.bitrix.info/oauth/token ─────────────────────────
+app.get('/b24oauth/token/', async (req, res) => {
+  const params = new URLSearchParams(req.query).toString();
+  const url = `https://oauth.bitrix.info/oauth/token/?${params}`;
+  console.log('[/b24oauth]', url);
+  await proxyFetch(url, req, res);
 });
 
-// ── Proxy: /b24rest → office.rocadatech.ru (REST API Битрикс24) ───────────
-app.use(
-  '/b24rest',
-  createProxyMiddleware({
-    target: 'https://office.rocadatech.ru',
-    changeOrigin: true,
-    secure: false,
-    pathRewrite: { '^/b24rest': '/rest' },
-  })
-);
+// ── /b24rest/* → office.rocadatech.ru/rest/* ────────────────────────────────
+app.use('/b24rest', async (req, res) => {
+  const rest = req.path; // например /user.current.json
+  const qs = new URLSearchParams(req.query).toString();
+  const url = `https://office.rocadatech.ru/rest${rest}${qs ? '?' + qs : ''}`;
+  console.log('[/b24rest]', url);
+  await proxyFetch(url, req, res);
+});
 
-// ── Static files from dist ─────────────────────────────────────────────────
+// ── /b24api/* → office.rocadatech.ru/local/modules/rocada.visits/... ─────────
+app.use('/b24api', async (req, res) => {
+  // Путь после /b24api/ становится значением route=
+  const route = req.path.replace(/^\//, ''); // убираем ведущий /
+  const extra = new URLSearchParams(req.query).toString();
+  const qs = extra ? `route=${route}&${extra}` : `route=${route}`;
+  const url = `https://office.rocadatech.ru/local/modules/rocada.visits/lib/router.php?${qs}`;
+  console.log('[/b24api]', url);
+  await proxyFetch(url, req, res);
+});
+
+// ── Static files from dist ────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// ── SPA fallback ───────────────────────────────────────────────────────────
+// ── SPA fallback ──────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
