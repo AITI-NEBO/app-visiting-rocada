@@ -21,16 +21,25 @@ app.use(
   })
 );
 
-// ── Proxy: /b24oauth → oauth.bitrix.info (OAuth2 token exchange) ───────────
-app.use(
-  '/b24oauth',
-  createProxyMiddleware({
-    target: 'https://oauth.bitrix.info',
-    changeOrigin: true,
-    secure: false,
-    pathRewrite: { '^/b24oauth': '/oauth' },
-  })
-);
+// ── Native fetch: /b24oauth/token → oauth.bitrix.info/oauth/token ──────────
+// Используем нативный fetch вместо прокси — http-proxy-middleware v3
+// иногда возвращает пустое тело для HTTPS-ответов.
+app.get('/b24oauth/token/', async (req, res) => {
+  try {
+    const params = new URLSearchParams(req.query).toString();
+    const url = `https://oauth.bitrix.info/oauth/token/?${params}`;
+    console.log('[/b24oauth] →', url);
+    const upstream = await fetch(url);
+    const text = await upstream.text();
+    console.log('[/b24oauth] ←', upstream.status, text.slice(0, 200));
+    res.status(upstream.status)
+       .set('Content-Type', upstream.headers.get('Content-Type') || 'application/json')
+       .send(text);
+  } catch (err) {
+    console.error('[/b24oauth] fetch error:', err.message);
+    res.status(502).json({ error: 'proxy_error', message: err.message });
+  }
+});
 
 // ── Proxy: /b24rest → office.rocadatech.ru (REST API Битрикс24) ───────────
 app.use(
