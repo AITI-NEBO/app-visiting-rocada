@@ -106,6 +106,12 @@ function handleClients(array $params): void
         $filter['CATEGORY_ID'] = $pipelines;
     }
 
+    // Фильтр по стадиям для карты
+    $mapStages = array_values(array_filter($dirCfg['stages_map'] ?? []));
+    if (!empty($mapStages)) {
+        $filter['STAGE_ID'] = $mapStages;
+    }
+
     $select = array_unique(array_filter(['ID', 'TITLE', 'COMPANY_ID', 'STAGE_ID', $latF, $lngF, $vdF, 'UF_UNLOAD_DOCS', 'UF_*']));
 
     $rows = DealTable::getList([

@@ -11,7 +11,7 @@
     <h1 class="header-title">{{ title }}</h1>
     <div class="header-right">
       <router-link to="/profile" class="header-avatar" aria-label="Профиль">
-        <span class="avatar-initials">АП</span>
+        <span class="avatar-initials">{{ userInitials }}</span>
         <span class="avatar-status"></span>
       </router-link>
     </div>
@@ -19,9 +19,22 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useAuth } from '../composables/useAuth'
+
 defineProps({
   title: { type: String, default: 'RocadaMed' },
   showBack: { type: Boolean, default: false }
+})
+
+const auth = useAuth()
+
+const userInitials = computed(() => {
+  const u = auth.user.value || {}
+  const firstName = u.firstName || ''
+  const lastName  = u.lastName  || ''
+  const initials  = (firstName[0] || '') + (lastName[0] || '')
+  return initials.toUpperCase() || 'U'
 })
 </script>
 

@@ -62,9 +62,7 @@
             <div class="field mt-3">
               <label>Доп. поля (при необходимости)</label>
               <div class="dynamic-inputs">
-                <input type="date" class="form-input" v-model="formData[item.id].next_comm_date" placeholder="След. коммуникация" />
-                <input type="tel" class="form-input mt-2" v-model="formData[item.id].phone_sms" placeholder="Телефон для SMS" />
-                <select v-if="item.products && item.products.length" class="form-select mt-2" v-model="formData[item.id].product_xml_id">
+                <select v-if="item.products && item.products.length" class="form-select" v-model="formData[item.id].product_xml_id">
                   <option value="">Выберите продукт для апробации (опц.)</option>
                   <option v-for="p in item.products" :key="p.xml_id" :value="p.xml_id">{{ p.name }}</option>
                 </select>
@@ -151,8 +149,6 @@ onMounted(async () => {
       formData[item.id] = {
         status_id: '0',
         comment: '',
-        next_comm_date: '',
-        phone_sms: '',
         product_xml_id: ''
       }
     })

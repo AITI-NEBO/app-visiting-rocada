@@ -127,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                     'pipelines'        => array_values(array_filter(array_map('intval', $d['pipelines'] ?? []))),
                     'stages_today'     => array_values(array_filter($d['stages_today']    ?? [])),
                     'stages_tomorrow'  => array_values(array_filter($d['stages_tomorrow'] ?? [])),
+                    'stages_map'       => array_values(array_filter($d['stages_map']      ?? [])),
                     'lat_field'        => $d['lat_field']        ?? '',
                     'lng_field'        => $d['lng_field']        ?? '',
                     'comment_field'    => $d['comment_field']    ?? '',
@@ -280,7 +281,7 @@ foreach ($ufFieldsDeal as $code => $label) {
         return {
             id: uid(), name: 'Новое направление', icon: 'briefcase',
             completion_type: 'sales',
-            pipelines: [], stages_today: [], stages_tomorrow: [],
+            pipelines: [], stages_today: [], stages_tomorrow: [], stages_map: [],
             lat_field: '', lng_field: '', comment_field: '', visit_date_field: '',
             deal_fields: [], allowed_users: [],
             result_statuses: []
@@ -386,12 +387,15 @@ foreach ($ufFieldsDeal as $code => $label) {
         // Запоминаем текущие выбранные значения стадий
         const todayEl    = card.querySelector('#today_'+dirId);
         const tomorrowEl = card.querySelector('#tomorrow_'+dirId);
+        const mapEl      = card.querySelector('#map_'+dirId);
         const curToday    = todayEl    ? [...todayEl.selectedOptions].map(o => o.value)    : [];
         const curTomorrow = tomorrowEl ? [...tomorrowEl.selectedOptions].map(o => o.value) : [];
+        const curMap      = mapEl      ? [...mapEl.selectedOptions].map(o => o.value)      : [];
 
         // Перестраиваем
         const todayWrap    = todayEl    ? todayEl.closest('.pwa-sel-wrap')    : null;
         const tomorrowWrap = tomorrowEl ? tomorrowEl.closest('.pwa-sel-wrap') : null;
+        const mapWrap      = mapEl      ? mapEl.closest('.pwa-sel-wrap')      : null;
 
         const tmp = document.createElement('div');
 
@@ -402,6 +406,10 @@ foreach ($ufFieldsDeal as $code => $label) {
         if (tomorrowWrap) {
             tmp.innerHTML = buildStageSelectFiltered('tomorrow_'+dirId, curTomorrow, true, chosen);
             tomorrowWrap.replaceWith(tmp.firstElementChild);
+        }
+        if (mapWrap) {
+            tmp.innerHTML = buildStageSelectFiltered('map_'+dirId, curMap, true, chosen);
+            mapWrap.replaceWith(tmp.firstElementChild);
         }
     };
 
@@ -430,6 +438,7 @@ foreach ($ufFieldsDeal as $code => $label) {
 
         const todayHtml    = buildStageSelectFiltered('today_'+dir.id,    dir.stages_today    || [], true, chosenPipelines);
         const tomorrowHtml = buildStageSelectFiltered('tomorrow_'+dir.id, dir.stages_tomorrow || [], true, chosenPipelines);
+        const mapHtml      = buildStageSelectFiltered('map_'+dir.id,      dir.stages_map      || [], true, chosenPipelines);
 
         const ufHtml    = buildSelect('uf_'+dir.id, ufFields, dir.deal_fields    || [], true, 'id', 'name', true);
         const latHtml   = buildSelect('lat_'+dir.id, ufFields, dir.lat_field    || '', false, 'id', 'name', true);
@@ -459,6 +468,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             <tr><td colspan="2"><hr style="margin:6px 0"></td></tr>
             <tr><td>Стадии «Сегодня»:</td><td>${todayHtml}</td></tr>
             <tr><td>Стадии «Завтра»:</td><td>${tomorrowHtml}</td></tr>
+            <tr><td>Стадии на Карте:<br><small>Если пусто — выводятся все сделки</small></td><td>${mapHtml}</td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0"><b>Поля сделки</b></td></tr>
             <tr><td>Доп. поля:</td><td>${ufHtml}<br><small>Ctrl+клик</small></td></tr>
             <tr><td>Поле широты:</td><td>${latHtml}</td></tr>
@@ -506,6 +516,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             pipelines:        getMulti('#cat_'+id).map(Number),
             stages_today:     getMulti('#today_'+id),
             stages_tomorrow:  getMulti('#tomorrow_'+id),
+            stages_map:       getMulti('#map_'+id),
             deal_fields:      getMulti('#uf_'+id),
             lat_field:        getSingle('#lat_'+id),
             lng_field:        getSingle('#lng_'+id),
