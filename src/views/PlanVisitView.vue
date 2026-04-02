@@ -391,6 +391,12 @@ function reset() {
 .deal-id { display: block; font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
 
 /* Plan form */
+.plan-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
 .deal-card-row {
   display: flex;
   align-items: center;
