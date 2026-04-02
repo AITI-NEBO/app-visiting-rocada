@@ -17,10 +17,20 @@ async function proxyFetch(targetUrl, req, res) {
       headers['Content-Type'] = req.headers['content-type'];
     }
 
-    const upstream = await fetch(targetUrl, {
+    const fetchOptions = {
       method: req.method,
       headers,
-    });
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const buffers = [];
+      for await (const chunk of req) {
+        buffers.push(chunk);
+      }
+      fetchOptions.body = Buffer.concat(buffers);
+    }
+
+    const upstream = await fetch(targetUrl, fetchOptions);
     const text = await upstream.text();
     res
       .status(upstream.status)
