@@ -665,6 +665,12 @@ onMounted(async () => {
       suppressMapOpenBlock: true
     })
 
+    ymaps.geolocation.get({ provider: 'yandex', autoReverseGeocode: false })
+      .then((result) => {
+        const coords = result.geoObjects.get(0).geometry.getCoordinates()
+        mapInstance.setCenter(coords, 12)
+      }).catch(() => {})
+
     updateMarkers()
   })
 })

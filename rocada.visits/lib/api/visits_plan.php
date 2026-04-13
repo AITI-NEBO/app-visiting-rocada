@@ -143,9 +143,25 @@ function handleVisitsPlan(array $params): void
         }
     }
 
-    if ($matchedDir && !empty($matchedDir['stages_today'])) {
-        // Берём первую рабочую стадию на сегодня
-        $targetStageId = $matchedDir['stages_today'][0];
+    if ($matchedDir) {
+        $todayStr = date('Y-m-d');
+        $tomorrowStr = date('Y-m-d', strtotime('+1 day'));
+        $visitStr = '';
+        try {
+            $dtObj = new \DateTime("{$visitDate} {$visitTime}");
+            $visitStr = $dtObj->format('Y-m-d');
+        } catch (\Exception $e) {}
+
+        if ($visitStr === $todayStr && !empty($matchedDir['stages_today'])) {
+            $targetStageId = $matchedDir['stages_today'][0];
+        } elseif ($visitStr === $tomorrowStr && !empty($matchedDir['stages_tomorrow'])) {
+            $targetStageId = $matchedDir['stages_tomorrow'][0];
+        } elseif ($visitStr > $tomorrowStr && !empty($matchedDir['stages_planned'])) {
+            $targetStageId = $matchedDir['stages_planned'][0];
+        } elseif (!empty($matchedDir['stages_today'])) {
+            // fallback
+            $targetStageId = $matchedDir['stages_today'][0];
+        }
     }
 
     // Собираем поля для обновления

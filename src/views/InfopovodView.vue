@@ -30,21 +30,21 @@
               <label>Статус</label>
               <select class="form-select" v-model="formData[item.id].status_id" required>
                 <option value="0" disabled>Выберите статус</option>
-                <optgroup label="Успешные">
+                <template v-if="item.statuses.success && item.statuses.success.length">
                   <option v-for="st in item.statuses.success" :key="st.id" :value="st.id">
                     {{ st.name }} {{ st.is_comment_required ? '(Обязателен комментарий)' : '' }}
                   </option>
-                </optgroup>
-                <optgroup label="Отказ/Ошибка">
+                </template>
+                <template v-if="item.statuses.error && item.statuses.error.length">
                   <option v-for="st in item.statuses.error" :key="st.id" :value="st.id">
                     {{ st.name }} {{ st.is_comment_required ? '(Обязателен комментарий)' : '' }}
                   </option>
-                </optgroup>
-                <optgroup label="Потенциал">
+                </template>
+                <template v-if="item.statuses.potential && item.statuses.potential.length">
                   <option v-for="st in item.statuses.potential" :key="st.id" :value="st.id">
                     {{ st.name }} {{ st.is_comment_required ? '(Обязателен комментарий)' : '' }}
                   </option>
-                </optgroup>
+                </template>
               </select>
             </div>
 

@@ -96,9 +96,16 @@ function handleClients(array $params): void
         $dirCfg['stages_tomorrow'] ?? []
     ));
 
-    // Для вкладки «Клиенты» (и общей карты) — показываем все сделки без фильтра по ответственному,
-    // чтобы менеджер видел все доступные компании и мог сделать визит "по пути"
-    $filter = ['!CLOSED' => 'Y'];
+    // Фильтр по закрытости сделок (по умолчанию берем все открытые)
+    $filter = [
+        '!CLOSED' => 'Y'
+    ];
+
+    // Добавляем фильтр по ответственному, только если в настройках стоит "только свои сделки"
+    $mapScope = $dirCfg['map_deals_scope'] ?? 'all';
+    if ($mapScope === 'assigned') {
+        $filter['ASSIGNED_BY_ID'] = $userId;
+    }
 
     // Фильтр по воронкам (CATEGORY_ID) если указаны в настройках направления
     $pipelines = array_map('intval', $dirCfg['pipelines'] ?? []);

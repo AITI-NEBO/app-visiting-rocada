@@ -105,28 +105,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
             foreach ($decoded as $d) {
                 if (empty($d['id']) || empty($d['name'])) continue;
 
-                // Нормализуем динамические статусы завершения
-                $resultStatuses = [];
-                foreach ((array)($d['result_statuses'] ?? []) as $st) {
-                    if (empty($st['name'])) continue;
-                    $resultStatuses[] = [
-                        'id'           => preg_replace('/[^\w\-]/', '', $st['id'] ?? ('rs_' . uniqid())),
-                        'name'         => mb_substr(trim($st['name']), 0, 100),
-                        'color'        => preg_match('/^#[0-9a-fA-F]{3,6}$/', $st['color'] ?? '') ? $st['color'] : '#0066ff',
-                        'stage'        => trim($st['stage'] ?? ''),
-                        'photo_fields' => array_values(array_filter((array)($st['photo_fields'] ?? []))),
-                        'is_successful'=> !empty($st['is_successful']),
-                    ];
-                }
+                    // Нормализуем динамические статусы завершения
+                    $resultStatuses = [];
+                    foreach ((array)($d['result_statuses'] ?? []) as $st) {
+                        if (empty($st['name'])) continue;
+                        $resultStatuses[] = [
+                            'id'           => preg_replace('/[^\w\-]/', '', $st['id'] ?? ('rs_' . uniqid())),
+                            'name'         => mb_substr(trim($st['name']), 0, 100),
+                            'color'        => preg_match('/^#[0-9a-fA-F]{3,6}$/', $st['color'] ?? '') ? $st['color'] : '#0066ff',
+                            'stage'        => trim($st['stage'] ?? ''),
+                            'photo_fields' => array_values(array_filter((array)($st['photo_fields'] ?? []))),
+                            'is_successful'=> !empty($st['is_successful']),
+                        ];
+                    }
 
-                $normalised[] = [
-                    'id'               => preg_replace('/[^\w\-]/', '', $d['id']),
-                    'name'             => mb_substr(trim($d['name']), 0, 100),
-                    'icon'             => $d['icon'] ?? 'briefcase',
-                    'completion_type'  => in_array($d['completion_type'] ?? '', ['sales', 'service']) ? $d['completion_type'] : 'sales',
-                    'pipelines'        => array_values(array_filter(array_map('intval', $d['pipelines'] ?? []))),
-                    'stages_today'     => array_values(array_filter($d['stages_today']    ?? [])),
-                    'stages_tomorrow'  => array_values(array_filter($d['stages_tomorrow'] ?? [])),
+                    $normalised[] = [
+                        'id'               => preg_replace('/[^\w\-]/', '', $d['id']),
+                        'name'             => mb_substr(trim($d['name']), 0, 100),
+                        'icon'             => $d['icon'] ?? 'briefcase',
+                        'completion_type'  => in_array($d['completion_type'] ?? '', ['sales', 'service']) ? $d['completion_type'] : 'sales',
+                        'map_deals_scope'  => in_array($d['map_deals_scope'] ?? '', ['all', 'assigned']) ? $d['map_deals_scope'] : 'all',
+                        'pipelines'        => array_values(array_filter(array_map('intval', $d['pipelines'] ?? []))),
+                        'stages_today'     => array_values(array_filter($d['stages_today']    ?? [])),
+                        'stages_tomorrow'  => array_values(array_filter($d['stages_tomorrow'] ?? [])),
+                    'stages_planned'   => array_values(array_filter($d['stages_planned']  ?? [])),
                     'stages_map'       => array_values(array_filter($d['stages_map']      ?? [])),
                     'lat_field'        => $d['lat_field']        ?? '',
                     'lng_field'        => $d['lng_field']        ?? '',
@@ -281,7 +283,8 @@ foreach ($ufFieldsDeal as $code => $label) {
         return {
             id: uid(), name: 'Новое направление', icon: 'briefcase',
             completion_type: 'sales',
-            pipelines: [], stages_today: [], stages_tomorrow: [], stages_map: [],
+            map_deals_scope: 'all',
+            pipelines: [], stages_today: [], stages_tomorrow: [], stages_planned: [], stages_map: [],
             lat_field: '', lng_field: '', comment_field: '', visit_date_field: '',
             deal_fields: [], allowed_users: [],
             result_statuses: []
@@ -387,14 +390,17 @@ foreach ($ufFieldsDeal as $code => $label) {
         // Запоминаем текущие выбранные значения стадий
         const todayEl    = card.querySelector('#today_'+dirId);
         const tomorrowEl = card.querySelector('#tomorrow_'+dirId);
+        const plannedEl  = card.querySelector('#planned_'+dirId);
         const mapEl      = card.querySelector('#map_'+dirId);
         const curToday    = todayEl    ? [...todayEl.selectedOptions].map(o => o.value)    : [];
         const curTomorrow = tomorrowEl ? [...tomorrowEl.selectedOptions].map(o => o.value) : [];
+        const curPlanned  = plannedEl  ? [...plannedEl.selectedOptions].map(o => o.value)  : [];
         const curMap      = mapEl      ? [...mapEl.selectedOptions].map(o => o.value)      : [];
 
         // Перестраиваем
         const todayWrap    = todayEl    ? todayEl.closest('.pwa-sel-wrap')    : null;
         const tomorrowWrap = tomorrowEl ? tomorrowEl.closest('.pwa-sel-wrap') : null;
+        const plannedWrap  = plannedEl  ? plannedEl.closest('.pwa-sel-wrap')  : null;
         const mapWrap      = mapEl      ? mapEl.closest('.pwa-sel-wrap')      : null;
 
         const tmp = document.createElement('div');
@@ -406,6 +412,10 @@ foreach ($ufFieldsDeal as $code => $label) {
         if (tomorrowWrap) {
             tmp.innerHTML = buildStageSelectFiltered('tomorrow_'+dirId, curTomorrow, true, chosen);
             tomorrowWrap.replaceWith(tmp.firstElementChild);
+        }
+        if (plannedWrap) {
+            tmp.innerHTML = buildStageSelectFiltered('planned_'+dirId, curPlanned, true, chosen);
+            plannedWrap.replaceWith(tmp.firstElementChild);
         }
         if (mapWrap) {
             tmp.innerHTML = buildStageSelectFiltered('map_'+dirId, curMap, true, chosen);
@@ -438,6 +448,7 @@ foreach ($ufFieldsDeal as $code => $label) {
 
         const todayHtml    = buildStageSelectFiltered('today_'+dir.id,    dir.stages_today    || [], true, chosenPipelines);
         const tomorrowHtml = buildStageSelectFiltered('tomorrow_'+dir.id, dir.stages_tomorrow || [], true, chosenPipelines);
+        const plannedHtml  = buildStageSelectFiltered('planned_'+dir.id,  dir.stages_planned  || [], true, chosenPipelines);
         const mapHtml      = buildStageSelectFiltered('map_'+dir.id,      dir.stages_map      || [], true, chosenPipelines);
 
         const ufHtml    = buildSelect('uf_'+dir.id, ufFields, dir.deal_fields    || [], true, 'id', 'name', true);
@@ -457,6 +468,12 @@ foreach ($ufFieldsDeal as $code => $label) {
           <div class="pwa-dir-body"><table>
             <tr><td>Название:</td><td><input type="text" class="dir-name" value="${escHtml(dir.name)}" oninput="this.closest('.pwa-dir-card').querySelector('.dir-title').textContent=this.value"></td></tr>
             <tr><td>Иконка:</td><td><select class="dir-icon">${ICONS.map(i=>`<option value="${i}"${dir.icon===i?' selected':''}>${i}</option>`).join('')}</select></td></tr>
+            <tr><td>Сделки на карте:</td><td>
+              <select class="dir-mapscope" style="width:100%;max-width:300px">
+                <option value="all"${(dir.map_deals_scope||'all')==='all'?' selected':''}>Брать все сделки (для планирования маршрута)</option>
+                <option value="assigned"${dir.map_deals_scope==='assigned'?' selected':''}>Только свои сделки (по ответственному)</option>
+              </select>
+            </td></tr>
             <tr><td>Тип завершения:</td><td>
               <select class="dir-ctype" onchange="onCtypeChange(this,'${dir.id}')" style="width:100%;max-width:300px">
                 <option value="sales"${!isService?' selected':''}>Продажи (статус → стадия)</option>
@@ -468,6 +485,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             <tr><td colspan="2"><hr style="margin:6px 0"></td></tr>
             <tr><td>Стадии «Сегодня»:</td><td>${todayHtml}</td></tr>
             <tr><td>Стадии «Завтра»:</td><td>${tomorrowHtml}</td></tr>
+            <tr><td>Стадии запланированных визитов:<br><small>Для визитов не сегодня и не завтра</small></td><td>${plannedHtml}</td></tr>
             <tr><td>Стадии на Карте:<br><small>Если пусто — выводятся все сделки</small></td><td>${mapHtml}</td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0"><b>Поля сделки</b></td></tr>
             <tr><td>Доп. поля:</td><td>${ufHtml}<br><small>Ctrl+клик</small></td></tr>
@@ -513,9 +531,11 @@ foreach ($ufFieldsDeal as $code => $label) {
             name:             getSingle('.dir-name').trim() || 'Без названия',
             icon:             getSingle('.dir-icon'),
             completion_type:  getSingle('.dir-ctype') || 'sales',
+            map_deals_scope:  getSingle('.dir-mapscope') || 'all',
             pipelines:        getMulti('#cat_'+id).map(Number),
             stages_today:     getMulti('#today_'+id),
             stages_tomorrow:  getMulti('#tomorrow_'+id),
+            stages_planned:   getMulti('#planned_'+id),
             stages_map:       getMulti('#map_'+id),
             deal_fields:      getMulti('#uf_'+id),
             lat_field:        getSingle('#lat_'+id),

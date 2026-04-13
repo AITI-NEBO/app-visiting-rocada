@@ -278,6 +278,12 @@ async function initMap(lat, lng, hasVisitPoint = true) {
     if (hasVisitPoint && lat && lng) {
       const placemark = new window.ymaps.Placemark([lat, lng], { hintContent: 'Точка визита' }, { preset: 'islands#blueDotIcon' })
       mapInstance.geoObjects.add(placemark)
+    } else {
+      window.ymaps.geolocation.get({ provider: 'yandex', autoReverseGeocode: false })
+        .then((result) => {
+          const coords = result.geoObjects.get(0).geometry.getCoordinates()
+          mapInstance.setCenter(coords, 14)
+        }).catch(() => {})
     }
   })
 }
