@@ -129,8 +129,8 @@ function visitsList(int $userId, array $params): void
         'offset' => ($page - 1) * $perPage,
     ])->fetchAll();
 
-    // Подгрузка координат из IBLOCK 206 (Пункты разгрузки)
-    $unloadCoords = [];
+    // Подгрузка координат и адресов из IBLOCK 206 (Пункты разгрузки)
+    $unloadData = [];
     $unloadDocsIds = array_filter(array_column($rows, 'UF_UNLOAD_DOCS'));
     if (!empty($unloadDocsIds) && \Bitrix\Main\Loader::includeModule('iblock')) {
         $elements = \CIBlockElement::GetList(
@@ -138,24 +138,28 @@ function visitsList(int $userId, array $params): void
             ['ID' => array_unique($unloadDocsIds), 'IBLOCK_ID' => 206],
             false,
             false,
-            ['ID', 'PROPERTY_LATITUDE', 'PROPERTY_LONGITUDE']
+            ['ID', 'NAME', 'PROPERTY_LATITUDE', 'PROPERTY_LONGITUDE']
         );
         while ($el = $elements->Fetch()) {
             $latVal = trim((string)($el['PROPERTY_LATITUDE_VALUE'] ?? ''));
             $lngVal = trim((string)($el['PROPERTY_LONGITUDE_VALUE'] ?? ''));
+            $entry = ['name' => trim((string)($el['NAME'] ?? ''))];
             if ($latVal !== '' && $lngVal !== '') {
-                $unloadCoords[(int)$el['ID']] = [
-                    'lat' => (float)$latVal,
-                    'lng' => (float)$lngVal,
-                ];
+                $entry['lat'] = (float)$latVal;
+                $entry['lng'] = (float)$lngVal;
             }
+            $unloadData[(int)$el['ID']] = $entry;
         }
     }
+
     foreach ($rows as &$r) {
         $udid = (int)($r['UF_UNLOAD_DOCS'] ?? 0);
-        if ($udid && isset($unloadCoords[$udid])) {
-            $r['_UNLOAD_LAT'] = $unloadCoords[$udid]['lat'];
-            $r['_UNLOAD_LNG'] = $unloadCoords[$udid]['lng'];
+        if ($udid && isset($unloadData[$udid])) {
+            if (isset($unloadData[$udid]['lat'])) {
+                $r['_UNLOAD_LAT'] = $unloadData[$udid]['lat'];
+                $r['_UNLOAD_LNG'] = $unloadData[$udid]['lng'];
+            }
+            $r['_COMPANY_ADDRESS'] = $unloadData[$udid]['name'];
         }
     }
     unset($r);
@@ -356,6 +360,7 @@ function formatDeal(array $d, array $cfg): array
         'lat'         => $d['_UNLOAD_LAT'] ?? (($lf && !empty($d[$lf])) ? (float)$d[$lf] : null),
         'lng'         => $d['_UNLOAD_LNG'] ?? (($rf && !empty($d[$rf])) ? (float)$d[$rf] : null),
         'geo_set'     => !empty($d['_UNLOAD_LAT']) || ($lf && !empty($d[$lf])),
+        'company_address' => $d['_COMPANY_ADDRESS'] ?? '',
         'fields'      => $extraFields,   // доп. поля направления
         'field_codes' => array_values($dealFieldCodes), // список кодов для фронта
     ];

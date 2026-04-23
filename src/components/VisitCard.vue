@@ -13,9 +13,9 @@
     <div class="card-body">
       <h4 class="card-title">{{ visit.title }}</h4>
       <div class="card-meta">
-        <div v-if="visit.stage_name" class="meta-row">
-          <span class="material-symbols-rounded meta-icon">flag</span>
-          <span class="meta-text">{{ visit.stage_name }}</span>
+        <div v-if="visit.company_address" class="meta-row">
+          <span class="material-symbols-rounded meta-icon">location_on</span>
+          <span class="meta-text">{{ visit.company_address }}</span>
         </div>
         <div v-if="visit.opportunity" class="meta-row">
           <span class="material-symbols-rounded meta-icon">payments</span>
