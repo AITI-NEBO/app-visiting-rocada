@@ -56,14 +56,14 @@
               <span class="material-symbols-rounded action-icon" style="color: var(--color-accent)">today</span>
             </div>
             <span class="action-label">Визиты<br/>сегодня</span>
-            <span class="action-count">{{ todayCount }}</span>
+            <span class="action-count">{{ todayTotal }}</span>
           </router-link>
           <router-link to="/visits?tab=tomorrow" class="action-card">
             <div class="action-icon-wrap" style="background: rgba(0, 102, 255, 0.12)">
               <span class="material-symbols-rounded action-icon" style="color: var(--color-primary)">event</span>
             </div>
             <span class="action-label">Визиты<br/>завтра</span>
-            <span class="action-count">{{ tomorrowCount }}</span>
+            <span class="action-count">{{ tomorrowTotal }}</span>
           </router-link>
           <router-link to="/map" class="action-card">
             <div class="action-icon-wrap" style="background: rgba(124, 58, 237, 0.12)">
