@@ -99,11 +99,13 @@ function handleVisitsResult(array $params): void
         }
     }
 
-    // Меняем стадию если указана
+    // Меняем стадию если указана — через REST API от имени пользователя,
+    // чтобы в истории Битрикс24 отображалось что стадию сменил конкретный пользователь
     if (!empty($targetStage)) {
-        $upd = DealTable::update($dealId, ['STAGE_ID' => $targetStage]);
-        if (!$upd->isSuccess()) {
-            pwaSendError(implode('; ', $upd->getErrorMessages()), 500);
+        try {
+            pwaUpdateDealViaRest((int)$dealId, ['STAGE_ID' => $targetStage]);
+        } catch (\RuntimeException $e) {
+            pwaSendError('Ошибка смены стадии: ' . $e->getMessage(), 500);
         }
     }
 

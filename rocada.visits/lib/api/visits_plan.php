@@ -164,27 +164,36 @@ function handleVisitsPlan(array $params): void
         }
     }
 
-    // Собираем поля для обновления
+    // Собираем поля для обновления (без STAGE_ID — его меняем через REST отдельно)
     $updateFields = [
         'UF_UNLOAD_DOCS' => $pointId,
         $visitDateField  => $visitDateTime,
     ];
 
-    if (!empty($targetStageId) && $dealCurrent['STAGE_ID'] !== $targetStageId) {
-        $updateFields['STAGE_ID'] = $targetStageId;
-    }
+    $needStageChange = !empty($targetStageId) && $dealCurrent['STAGE_ID'] !== $targetStageId;
 
     if (!Loader::includeModule('crm')) {
         pwaSendError('Module CRM not installed', 500);
     }
 
-    // Обновляем сделку, двигая стадию и записывая новые данные
+    // Обновляем UF-поля сделки через D7 (серверный контекст — ОК для UF полей)
     $updateResult = DealTable::update($dealId, $updateFields);
 
-    if ($updateResult->isSuccess()) {
-        pwaSendJson(['deal_id' => $dealId, 'message' => 'Визит успешно запланирован']);
-    } else {
+    if (!$updateResult->isSuccess()) {
         $errors = implode(', ', $updateResult->getErrorMessages());
         pwaSendError('Ошибка планирования визита: ' . $errors, 400);
     }
+
+    // Меняем стадию через REST API от имени пользователя,
+    // чтобы в истории Битрикс24 отображалось что стадию сменил конкретный пользователь
+    if ($needStageChange) {
+        try {
+            pwaUpdateDealViaRest($dealId, ['STAGE_ID' => $targetStageId]);
+        } catch (\RuntimeException $e) {
+            // UF-поля уже сохранены, но стадию не удалось сменить
+            pwaSendError('Визит запланирован, но ошибка смены стадии: ' . $e->getMessage(), 500);
+        }
+    }
+
+    pwaSendJson(['deal_id' => $dealId, 'message' => 'Визит успешно запланирован']);
 }
