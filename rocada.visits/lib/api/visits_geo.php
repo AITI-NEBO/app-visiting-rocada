@@ -38,9 +38,12 @@ function handleVisitsGeo(array $params): void
         pwaSendError('Некорректные координаты', 422);
     }
 
-    $dirCfg   = getDirectionConfig($params['get']['direction'] ?? 'sales', $mid);
+    // direction может прийти и в body (SalesResultView шлёт его в JSON), и в GET
+    $dirId    = $body['direction'] ?? ($params['get']['direction'] ?? 'sales');
+    $dirCfg   = getDirectionConfig((string)$dirId, $mid);
     $latField = $dirCfg['lat_field'] ?? '';
     $lngField = $dirCfg['lng_field'] ?? '';
+    $checkinField = $dirCfg['checkin_field'] ?? '';
 
     if (empty($latField) || empty($lngField)) {
         pwaSendError('Поля координат не настроены в модуле', 500);
@@ -56,10 +59,18 @@ function handleVisitsGeo(array $params): void
         pwaSendError('Визит не найден или нет доступа', 404);
     }
 
-    $res = DealTable::update($dealId, [
+    $updateFields = [
         $latField => $lat,
         $lngField => $lng,
-    ]);
+    ];
+
+    // Дата/время чекина — фиксируем момент подтверждения геолокации
+    // (поле настраивается в направлении, например UF_DATA_VREMIA_CHEKIN)
+    if (!empty($checkinField)) {
+        $updateFields[$checkinField] = date('d.m.Y H:i:s');
+    }
+
+    $res = DealTable::update($dealId, $updateFields);
 
     if (!$res->isSuccess()) {
         pwaSendError(implode('; ', $res->getErrorMessages()), 500);

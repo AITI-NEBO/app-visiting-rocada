@@ -9,30 +9,12 @@
           <span class="material-symbols-rounded deal-info-icon">assignment</span>
           <div class="deal-info-text">
             <span class="deal-info-label">Визит</span>
-            <span class="deal-info-title">{{ visit?.title }}</span>
-          </div>
-        </div>
-
-        <!-- Existing comments -->
-        <div v-if="visit?.comments.length" class="existing-comments animate-fade-in-up" style="animation-delay: 100ms">
-          <h3 class="section-title">
-            <span class="material-symbols-rounded section-icon">forum</span>
-            Комментарии ({{ visit.comments.length }})
-          </h3>
-          <div class="comments-list">
-            <div v-for="(comment, i) in visit.comments" :key="i" class="comment-bubble">
-              <div class="bubble-header">
-                <div class="bubble-avatar">{{ comment.author[0] }}</div>
-                <span class="bubble-author">{{ comment.author }}</span>
-                <span class="bubble-time">{{ formatTime(comment.date) }}</span>
-              </div>
-              <p class="bubble-text">{{ comment.text }}</p>
-            </div>
+            <span class="deal-info-title">{{ visit?.title || `Сделка #${$route.params.id}` }}</span>
           </div>
         </div>
 
         <!-- Input -->
-        <div class="input-section animate-fade-in-up" style="animation-delay: 200ms">
+        <div class="input-section animate-fade-in-up" style="animation-delay: 100ms">
           <h3 class="section-title">
             <span class="material-symbols-rounded section-icon">edit_note</span>
             Новый комментарий
@@ -40,7 +22,7 @@
           <div class="input-wrap" :class="{ focused: isFocused }">
             <textarea
               v-model="commentText"
-              placeholder="Напишите комментарий..."
+              placeholder="Комментарий в таймлайн сделки"
               rows="4"
               @focus="isFocused = true"
               @blur="isFocused = false"
@@ -54,14 +36,20 @@
           </div>
         </div>
 
+        <!-- Error -->
+        <div v-if="errorMsg" class="error-banner">
+          <span class="material-symbols-rounded">error</span>
+          <span>{{ errorMsg }}</span>
+        </div>
+
         <!-- Success -->
         <div v-if="isSent" class="success-msg animate-scale-in">
           <span class="material-symbols-rounded success-check">check_circle</span>
-          <span class="success-text">Комментарий добавлен!</span>
+          <span class="success-text">Комментарий добавлен в таймлайн сделки!</span>
         </div>
 
         <!-- Action -->
-        <div class="action-section animate-fade-in-up" style="animation-delay: 300ms">
+        <div class="action-section animate-fade-in-up" style="animation-delay: 200ms">
           <button
             v-if="!isSent"
             class="send-btn"
@@ -87,26 +75,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import LogoSpinner from '../components/LogoSpinner.vue'
 import { useVisits } from '../composables/useVisits'
 
 const route = useRoute()
-const { findVisit, loadVisits, addComment, loadComments } = useVisits()
+const { findVisit, loadVisits, addComment } = useVisits()
 
 const visit = ref(null)
-const comments = ref([])
 
 onMounted(async () => {
-  await loadVisits()
-  visit.value = findVisit(route.params.id)
+  // Название визита — необязательное украшение; ошибки загрузки не должны ломать страницу
   try {
-    const data = await loadComments(route.params.id)
-    comments.value = Array.isArray(data) ? data : []
+    await loadVisits()
+    visit.value = findVisit(route.params.id)
   } catch (e) {
-    console.warn('[CommentView] Could not load comments:', e)
+    console.warn('[CommentView] Could not load visit info:', e)
   }
 })
 
@@ -114,21 +100,18 @@ const commentText = ref('')
 const isFocused = ref(false)
 const isSending = ref(false)
 const isSent = ref(false)
-
-function formatTime(dateStr) {
-  if (!dateStr) return ''
-  return dateStr.split(' ')[1] || dateStr
-}
+const errorMsg = ref('')
 
 async function sendComment() {
   if (!commentText.value.trim()) return
   isSending.value = true
+  errorMsg.value = ''
   try {
     await addComment(route.params.id, commentText.value.trim())
     isSent.value = true
   } catch (e) {
     console.error('[CommentView] Error sending comment:', e)
-    alert('Ошибка: ' + e.message)
+    errorMsg.value = 'Не удалось отправить комментарий: ' + e.message
   } finally {
     isSending.value = false
   }
@@ -214,57 +197,6 @@ async function sendComment() {
   color: var(--color-text-tertiary);
 }
 
-/* Comments */
-.comments-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-}
-
-.comment-bubble {
-  padding: var(--space-base);
-  background: var(--color-bg-card);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-}
-
-.bubble-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
-}
-
-.bubble-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  color: white;
-}
-
-.bubble-author {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  flex: 1;
-}
-
-.bubble-time {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-tertiary);
-}
-
-.bubble-text {
-  font-size: var(--font-size-base);
-  color: var(--color-text-secondary);
-  line-height: var(--line-height-normal);
-}
-
 /* Input */
 .input-wrap {
   border: 1px solid var(--color-border);
@@ -311,6 +243,18 @@ textarea:disabled {
 
 .char-count.warn {
   color: var(--color-warning);
+}
+
+/* Error */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-base);
+  background: rgba(255, 68, 68, 0.1);
+  color: var(--color-danger);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
 }
 
 /* Success */
@@ -366,8 +310,6 @@ textarea:disabled {
 .send-icon {
   font-size: 22px;
 }
-
-/* spinner replaced with LogoSpinner component */
 
 .back-btn {
   background: var(--color-bg-card);

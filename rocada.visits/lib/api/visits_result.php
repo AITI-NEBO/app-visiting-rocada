@@ -43,14 +43,27 @@ function handleVisitsResult(array $params): void
         pwaSendError('status_id или new_stage_id обязательны', 422);
     }
 
-    // Проверяем доступ к сделке
+    $dirCfg       = getDirectionConfig($dirId, $mid);
+    $checkinField = $dirCfg['checkin_field'] ?? '';
+
+    // Проверяем доступ к сделке (+ читаем поле чекина, если настроено)
+    $select = ['ID', 'TITLE'];
+    if (!empty($checkinField)) {
+        $select[] = $checkinField;
+    }
     $deal = DealTable::getList([
         'filter' => ['=ID' => $dealId, '=ASSIGNED_BY_ID' => $userId],
-        'select' => ['ID', 'TITLE'],
+        'select' => $select,
     ])->fetch();
 
     if (!$deal) {
         pwaSendError('Визит не найден или нет доступа', 404);
+    }
+
+    // Подстраховка: если гео было пропущено и чекин ещё не зафиксирован —
+    // фиксируем дату/время чекина в момент сохранения результата
+    if (!empty($checkinField) && empty($deal[$checkinField])) {
+        DealTable::update($dealId, [$checkinField => date('d.m.Y H:i:s')]);
     }
 
     // Определяем целевой статус и стадию из конфига направления
@@ -58,7 +71,6 @@ function handleVisitsResult(array $params): void
     $statusLabel = '';
 
     if (!empty($statusId)) {
-        $dirCfg   = getDirectionConfig($dirId, $mid);
         $statuses = $dirCfg['result_statuses'] ?? [];
 
         foreach ($statuses as $st) {

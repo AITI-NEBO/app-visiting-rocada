@@ -17,7 +17,7 @@
         <span class="material-symbols-rounded">info</span>
         <h3>Инфоповоды не найдены</h3>
         <p>Для данной сделки нет доступных инфоповодов.</p>
-        <button class="primary-btn mt-4" @click="finish">Завершить</button>
+        <button class="primary-btn mt-4" @click="finish">На главную</button>
       </div>
 
       <div v-else class="infopovod-container">
@@ -49,31 +49,61 @@
             </div>
 
             <div class="field mt-3">
-              <label>Комментарий (Важна любая обратная связь)</label>
+              <label>Комментарий {{ isCommentRequired(item.id) ? '*' : '(Важна любая обратная связь)' }}</label>
               <textarea
                 class="form-textarea"
                 rows="3"
                 v-model="formData[item.id].comment"
+                :placeholder="commentPlaceholder(item.id)"
                 :required="isCommentRequired(item.id)"
               ></textarea>
             </div>
 
-            <!-- Dynamic fields depending on status -->
-            <div class="field mt-3">
-              <label>Доп. поля (при необходимости)</label>
-              <div class="dynamic-inputs">
-                <select v-if="item.products && item.products.length" class="form-select" v-model="formData[item.id].product_xml_id">
-                  <option value="">Выберите продукт для апробации (опц.)</option>
+            <!-- Динамические поля выбранного статуса завершения -->
+            <template v-if="statusFields(item.id)">
+              <div v-if="statusFields(item.id).add_date" class="field mt-3">
+                <label>Дата следующей коммуникации</label>
+                <input type="date" class="form-input" v-model="formData[item.id].next_comm_date" />
+              </div>
+
+              <div v-if="statusFields(item.id).fio" class="field mt-3">
+                <label>ФИО *</label>
+                <input type="text" class="form-input" v-model="formData[item.id].fio" required />
+              </div>
+
+              <div v-if="statusFields(item.id).phone" class="field mt-3">
+                <label>Номер телефона *</label>
+                <input type="tel" class="form-input" v-model="formData[item.id].phone" required />
+              </div>
+
+              <div v-if="statusFields(item.id).payment_type" class="field mt-3">
+                <label>Форма оплаты</label>
+                <select v-if="paymentTypes.length" class="form-select" v-model="formData[item.id].payment_type">
+                  <option value="">Выберите форму оплаты (опц.)</option>
+                  <option v-for="pt in paymentTypes" :key="pt" :value="pt">{{ pt }}</option>
+                </select>
+                <input v-else type="text" class="form-input" v-model="formData[item.id].payment_type" />
+              </div>
+
+              <div v-if="statusFields(item.id).launch_bp && item.products && item.products.length" class="field mt-3">
+                <label>Продукт</label>
+                <select class="form-select" v-model="formData[item.id].product">
+                  <option value="">Выберите продукт (опц.)</option>
                   <option v-for="p in item.products" :key="p.xml_id" :value="p.xml_id">{{ p.name }}</option>
                 </select>
               </div>
-            </div>
+            </template>
           </div>
 
           <button type="submit" class="primary-btn submit-btn" :disabled="submitting">
             <span v-if="submitting" class="material-symbols-rounded spin">progress_activity</span>
             <span v-else class="material-symbols-rounded">check_circle</span>
             {{ submitting ? 'Сохранение...' : 'Отправить результаты' }}
+          </button>
+
+          <button type="button" class="no-result-btn" :disabled="submitting" @click="finish">
+            <span class="material-symbols-rounded">block</span>
+            Без результата
           </button>
         </form>
 
@@ -139,17 +169,25 @@ function showToast(msg) {
   setTimeout(() => { toastMsg.value = '' }, 3000)
 }
 
+// Варианты «Формы оплаты» из настроек модуля
+const paymentTypes = ref([])
+
 onMounted(async () => {
   try {
     const res = await fetchInfopovods(visitId)
     items.value = res.items || []
-    
+    paymentTypes.value = res.payment_types || []
+
     // Initialize form data
     items.value.forEach(item => {
       formData[item.id] = {
         status_id: '0',
         comment: '',
-        product_xml_id: ''
+        next_comm_date: '',
+        fio: '',
+        phone: '',
+        payment_type: '',
+        product: ''
       }
     })
   } catch (err) {
@@ -167,16 +205,34 @@ onUnmounted(() => {
   }
 })
 
-function isCommentRequired(itemId) {
+// Выбранный статус завершения для инфоповода
+function selectedStatus(itemId) {
   const stId = formData[itemId]?.status_id
-  if (!stId || stId === '0') return false
-  
+  if (!stId || stId === '0') return null
+
   const item = items.value.find(i => i.id == itemId)
-  if (!item) return false
-  
-  const allSt = [...item.statuses.success, ...item.statuses.error, ...item.statuses.potential]
-  const st = allSt.find(s => s.id == stId)
-  return st?.is_comment_required || false
+  if (!item) return null
+
+  const allSt = [
+    ...(item.statuses.success || []),
+    ...(item.statuses.error || []),
+    ...(item.statuses.potential || []),
+  ]
+  return allSt.find(s => s.id == stId) || null
+}
+
+function isCommentRequired(itemId) {
+  return selectedStatus(itemId)?.is_comment_required || false
+}
+
+// Конфиг динамических полей статуса (флаги ADD_DATE / FIO / PHONE / PAYMENT_TYPE / LAUNCH_BP)
+function statusFields(itemId) {
+  return selectedStatus(itemId)?.fields || null
+}
+
+// Плейсхолдер комментария из свойства PLACEHOLDER_TEXT статуса
+function commentPlaceholder(itemId) {
+  return selectedStatus(itemId)?.placeholder || 'Нам важна любая обратная связь'
 }
 
 // -- Voice Recording --
@@ -299,6 +355,23 @@ async function submitForm() {
       showToast('Пожалуйста, выберите статус для всех инфоповодов.')
       return
     }
+
+    const item = items.value.find(i => i.id == id)
+    const name = item?.name || id
+    const fields = statusFields(id)
+
+    if (isCommentRequired(id) && !formData[id].comment.trim()) {
+      showToast(`«${name}»: комментарий обязателен.`)
+      return
+    }
+    if (fields?.fio && !formData[id].fio.trim()) {
+      showToast(`«${name}»: заполните поле «ФИО».`)
+      return
+    }
+    if (fields?.phone && !formData[id].phone.trim()) {
+      showToast(`«${name}»: заполните поле «Номер телефона».`)
+      return
+    }
   }
 
   submitting.value = true
@@ -310,9 +383,9 @@ async function submitForm() {
         ...formData[id]
       })
     }
-    
+
     await submitInfopovods(visitId, payloadItems)
-    
+
     router.replace('/')
   } catch (e) {
     console.error(e)
@@ -322,6 +395,7 @@ async function submitForm() {
   }
 }
 
+// «Без результата» / выход без сохранения — переход на «Главную»
 function finish() {
   router.replace('/')
 }
@@ -399,6 +473,14 @@ function finish() {
   color: white; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px;
 }
 .submit-btn:disabled { opacity: 0.7; pointer-events: none; }
+
+.no-result-btn {
+  width: 100%; padding: 14px; margin-top: 10px; border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border); background: var(--color-bg-card);
+  color: var(--color-text-secondary); font-size: 15px; font-weight: 500;
+  cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px;
+}
+.no-result-btn:disabled { opacity: 0.6; pointer-events: none; }
 
 .mt-2 { margin-top: 8px; }
 .mt-3 { margin-top: 12px; }

@@ -14,6 +14,8 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_ad
 
 Loc::loadMessages(__FILE__);
 Loader::includeModule('crm');
+Loader::includeModule('iblock');
+Loader::includeModule('highloadblock');
 Loader::includeModule('rocada.visits');
 
 $moduleId = ADMIN_MODULE_NAME;
@@ -43,6 +45,30 @@ function pwaGetUfFields(string $entityId = 'CRM_DEAL'): array
 }
 
 function getPwaDealUfFields(): array { return pwaGetUfFields('CRM_DEAL'); }
+
+// ── Инфоблоки и HL-блоки (для таба «Инфоповоды») ──────────────────────────
+function pwaGetIblocks(): array
+{
+    $iblocks = [];
+    $rs = \CIBlock::GetList(['IBLOCK_TYPE' => 'ASC', 'NAME' => 'ASC'], ['ACTIVE' => 'Y']);
+    while ($ib = $rs->Fetch()) {
+        $iblocks[(int)$ib['ID']] = "[{$ib['ID']}] {$ib['NAME']} ({$ib['IBLOCK_TYPE_ID']})";
+    }
+    return $iblocks;
+}
+
+function pwaGetHlBlocks(): array
+{
+    $blocks = [];
+    $rs = \Bitrix\Highloadblock\HighloadBlockTable::getList([
+        'select' => ['ID', 'NAME', 'TABLE_NAME'],
+        'order'  => ['ID' => 'ASC'],
+    ]);
+    while ($row = $rs->fetch()) {
+        $blocks[(int)$row['ID']] = "[{$row['ID']}] {$row['NAME']} ({$row['TABLE_NAME']})";
+    }
+    return $blocks;
+}
 
 // ── Активные пользователи ──────────────────────────────────────────────────
 function pwaGetActiveUsers(): array
@@ -134,6 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                     'lng_field'        => $d['lng_field']        ?? '',
                     'comment_field'    => $d['comment_field']    ?? '',
                     'visit_date_field' => $d['visit_date_field'] ?? '',
+                    'checkin_field'    => $d['checkin_field']    ?? '',
                     'deal_fields'      => array_values(array_filter($d['deal_fields'] ?? [])),
                     'allowed_users'    => array_values(array_filter(array_map('intval', $d['allowed_users'] ?? []))),
                     'result_statuses'  => $resultStatuses,
@@ -151,6 +178,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
     // ③ Поля Компании / Контакта — глобальные
     Option::set($moduleId, 'pwa_company_fields', json_encode(array_values(array_filter((array)($_POST['company_fields'] ?? [])))));
     Option::set($moduleId, 'pwa_contact_fields', json_encode(array_values(array_filter((array)($_POST['contact_fields'] ?? [])))));
+
+    // ④ Настройки блока «Инфоповоды»
+    $infopovodKeys = [
+        'infopovod_statuses_iblock_id',
+        'infopovod_products_iblock_id',
+        'infopovod_hlblock_id',
+        'infopovod_deal_field',
+        'infopovod_type_property_id',
+        'infopovod_status_enum_success',
+        'infopovod_status_enum_error',
+        'infopovod_status_enum_potential',
+        'infopovod_comment_enum_yes',
+        'infopovod_hl_field_next_comm_date',
+        'infopovod_hl_field_fio',
+        'infopovod_hl_field_phone',
+        'infopovod_hl_field_payment_type',
+        'infopovod_hl_field_product',
+        'infopovod_payment_types',
+    ];
+    foreach ($infopovodKeys as $key) {
+        if (isset($_POST[$key])) {
+            Option::set($moduleId, $key, trim((string)$_POST[$key]));
+        }
+    }
 
     $APPLICATION->AuthForm('Настройки сохранены');
 }
@@ -184,11 +235,41 @@ $crmStages       = getPwaCrmStages();
 $crmCategories   = getPwaCrmCategories();
 $activeUsers     = pwaGetActiveUsers();
 
+// ── Настройки инфоповодов (дефолты = исторический хардкод) ────────────────
+$ipDefaults = [
+    'infopovod_statuses_iblock_id'      => '236',
+    'infopovod_products_iblock_id'      => '26',
+    'infopovod_hlblock_id'              => '12',
+    'infopovod_deal_field'              => 'UF_CRM_1595504443',
+    'infopovod_type_property_id'        => '2183',
+    'infopovod_status_enum_success'     => '3371',
+    'infopovod_status_enum_error'       => '3372',
+    'infopovod_status_enum_potential'   => '3524',
+    'infopovod_comment_enum_yes'        => '3381',
+    'infopovod_hl_field_next_comm_date' => 'UF_DATA_SLEDUYUSHCHEY_KOMMUNIKATSII',
+    'infopovod_hl_field_fio'            => 'UF_FIO',
+    'infopovod_hl_field_phone'          => 'UF_PHONE',
+    'infopovod_hl_field_payment_type'   => 'UF_PAYMENT_TYPE',
+    'infopovod_hl_field_product'        => 'UF_PRODUCT',
+    'infopovod_payment_types'           => '',
+];
+$ipValues = [];
+foreach ($ipDefaults as $key => $default) {
+    $val = trim(Option::get($moduleId, $key, ''));
+    $ipValues[$key] = ($val !== '') ? $val : $default;
+}
+
+$allIblocks  = pwaGetIblocks();
+$allHlBlocks = pwaGetHlBlocks();
+// UF-поля выбранного HL-блока — для маппинга динамических полей
+$ufFieldsHl  = pwaGetUfFields('HLBLOCK_' . (int)$ipValues['infopovod_hlblock_id']);
+
 require_once $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_admin_after.php';
 
 $tabControl = new CAdminTabControl('tabControl', [
     ['DIV' => 'tab_directions', 'TAB' => 'Направления',    'ICON' => ''],
     ['DIV' => 'tab_fields',     'TAB' => 'Поля карточек',  'ICON' => ''],
+    ['DIV' => 'tab_infopovod',  'TAB' => 'Инфоповоды',     'ICON' => ''],
     ['DIV' => 'tab_access',     'TAB' => 'Доступ',         'ICON' => ''],
 ]);
 
@@ -285,7 +366,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             completion_type: 'sales',
             map_deals_scope: 'all',
             pipelines: [], stages_today: [], stages_tomorrow: [], stages_planned: [], stages_map: [],
-            lat_field: '', lng_field: '', comment_field: '', visit_date_field: '',
+            lat_field: '', lng_field: '', comment_field: '', visit_date_field: '', checkin_field: '',
             deal_fields: [], allowed_users: [],
             result_statuses: []
         };
@@ -456,6 +537,7 @@ foreach ($ufFieldsDeal as $code => $label) {
         const lngHtml   = buildSelect('lng_'+dir.id, ufFields, dir.lng_field    || '', false, 'id', 'name', true);
         const comHtml   = buildSelect('com_'+dir.id, ufFields, dir.comment_field|| '', false, 'id', 'name', true);
         const vdHtml    = buildSelect('vd_'+dir.id,  ufFields, dir.visit_date_field||'', false, 'id', 'name', true);
+        const chkHtml   = buildSelect('chk_'+dir.id, ufFields, dir.checkin_field||'', false, 'id', 'name', true);
         const usersHtml = buildSelect('usr_'+dir.id, users, (dir.allowed_users||[]).map(Number), true, 'id', 'name', true);
 
         const statusesHtml = statuses.map(s => renderStatus(dir.id, s, isService)).join('');
@@ -493,6 +575,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             <tr><td>Поле долготы:</td><td>${lngHtml}</td></tr>
             <tr><td>Поле комментария:</td><td>${comHtml}</td></tr>
             <tr><td>Поле даты визита:</td><td>${vdHtml}</td></tr>
+            <tr><td>Поле даты/времени чекина:<br><small>Заполняется при подтверждении геолокации (например UF_DATA_VREMIA_CHEKIN)</small></td><td>${chkHtml}</td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0">
               <b>Статусы завершения</b>
               <span style="font-weight:normal;color:#888;font-size:12px"> — видны сотруднику в PWA. Пустая стадия = не менять.</span>
@@ -542,6 +625,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             lng_field:        getSingle('#lng_'+id),
             comment_field:    getSingle('#com_'+id),
             visit_date_field: getSingle('#vd_'+id),
+            checkin_field:    getSingle('#chk_'+id),
             allowed_users:    getMulti('#usr_'+id).map(Number),
             result_statuses:  resultStatuses,
         };
@@ -634,6 +718,99 @@ $tabControl->BeginNextTab();
             </select>
         </div>
         <br><small>Поля контакта, видимые в карточке (Ctrl+клик — множественный выбор)</small>
+    </td>
+</tr>
+
+<?php
+// ─── ТАБ: Инфоповоды ───────────────────────────────────────────────────────
+$tabControl->BeginNextTab();
+?>
+<tr><td colspan="2"><p style="color:#888;margin:8px 0">
+    Настройки формы «Результаты по инфоповодам» в PWA. Значения по умолчанию соответствуют текущей
+    конфигурации портала — <b>если всё работает, менять ничего не нужно</b>.<br>
+    После смены HL-блока сохраните настройки — списки его полей для маппинга обновятся.
+</p></td></tr>
+
+<tr><td colspan="2"><b>Справочники</b></td></tr>
+<tr>
+    <td><label for="infopovod_statuses_iblock_id">Инфоблок статусов завершения</label></td>
+    <td><?= pwaSel('infopovod_statuses_iblock_id', $allIblocks, (int)$ipValues['infopovod_statuses_iblock_id']) ?>
+    <br><small>Элементы со свойствами TYPE_INFO, STATUS, COMMENT, PLACEHOLDER_TEXT, ADD_DATE, FIO, PHONE, PAYMENT_TYPE, LAUNCH_BP</small></td>
+</tr>
+<tr>
+    <td><label for="infopovod_products_iblock_id">Инфоблок продуктов</label></td>
+    <td><?= pwaSel('infopovod_products_iblock_id', $allIblocks, (int)$ipValues['infopovod_products_iblock_id']) ?>
+    <br><small>Продукты, на которые ссылается свойство PRODUCT инфоповода</small></td>
+</tr>
+<tr>
+    <td><label for="infopovod_hlblock_id">HL-блок результатов</label></td>
+    <td><?= pwaSel('infopovod_hlblock_id', $allHlBlocks, (int)$ipValues['infopovod_hlblock_id']) ?>
+    <br><small>Highload-блок «Результаты касаний с Партнером»</small></td>
+</tr>
+<tr>
+    <td><label for="infopovod_deal_field">Поле сделки с инфоповодами</label></td>
+    <td><?= pwaSel('infopovod_deal_field', $ufFieldsDeal, $ipValues['infopovod_deal_field']) ?>
+    <br><small>Множественное UF-поле сделки со ссылками на элементы ИБ инфоповодов</small></td>
+</tr>
+
+<tr><td colspan="2"><hr><b>Служебные ID</b> <span style="font-weight:normal;color:#888;font-size:12px">— менять только если менялись свойства инфоблоков</span></td></tr>
+<tr>
+    <td><label for="infopovod_type_property_id">ID свойства TYPE_INFO (ИБ инфоповодов)</label></td>
+    <td><input type="text" name="infopovod_type_property_id" id="infopovod_type_property_id" size="10"
+        value="<?= htmlspecialchars($ipValues['infopovod_type_property_id']) ?>"></td>
+</tr>
+<tr>
+    <td><label for="infopovod_status_enum_success">Enum-ID STATUS «Успех»</label></td>
+    <td><input type="text" name="infopovod_status_enum_success" id="infopovod_status_enum_success" size="10"
+        value="<?= htmlspecialchars($ipValues['infopovod_status_enum_success']) ?>"></td>
+</tr>
+<tr>
+    <td><label for="infopovod_status_enum_error">Enum-ID STATUS «Неуспех»</label></td>
+    <td><input type="text" name="infopovod_status_enum_error" id="infopovod_status_enum_error" size="10"
+        value="<?= htmlspecialchars($ipValues['infopovod_status_enum_error']) ?>"></td>
+</tr>
+<tr>
+    <td><label for="infopovod_status_enum_potential">Enum-ID STATUS «Потенциал»</label></td>
+    <td><input type="text" name="infopovod_status_enum_potential" id="infopovod_status_enum_potential" size="10"
+        value="<?= htmlspecialchars($ipValues['infopovod_status_enum_potential']) ?>"></td>
+</tr>
+<tr>
+    <td><label for="infopovod_comment_enum_yes">Enum-ID COMMENT «Да» (комментарий обязателен)</label></td>
+    <td><input type="text" name="infopovod_comment_enum_yes" id="infopovod_comment_enum_yes" size="10"
+        value="<?= htmlspecialchars($ipValues['infopovod_comment_enum_yes']) ?>"></td>
+</tr>
+
+<tr><td colspan="2"><hr><b>Маппинг динамических полей → поля HL-блока</b>
+    <span style="font-weight:normal;color:#888;font-size:12px">— куда сохраняются значения полей формы</span></td></tr>
+<tr>
+    <td><label for="infopovod_hl_field_next_comm_date">«Дата следующей коммуникации» (ADD_DATE)</label></td>
+    <td><?= pwaSel('infopovod_hl_field_next_comm_date', $ufFieldsHl, $ipValues['infopovod_hl_field_next_comm_date']) ?></td>
+</tr>
+<tr>
+    <td><label for="infopovod_hl_field_fio">«ФИО» (FIO)</label></td>
+    <td><?= pwaSel('infopovod_hl_field_fio', $ufFieldsHl, $ipValues['infopovod_hl_field_fio']) ?></td>
+</tr>
+<tr>
+    <td><label for="infopovod_hl_field_phone">«Номер телефона» (PHONE)</label></td>
+    <td><?= pwaSel('infopovod_hl_field_phone', $ufFieldsHl, $ipValues['infopovod_hl_field_phone']) ?></td>
+</tr>
+<tr>
+    <td><label for="infopovod_hl_field_payment_type">«Форма оплаты» (PAYMENT_TYPE)</label></td>
+    <td><?= pwaSel('infopovod_hl_field_payment_type', $ufFieldsHl, $ipValues['infopovod_hl_field_payment_type']) ?></td>
+</tr>
+<tr>
+    <td><label for="infopovod_hl_field_product">«Продукт» (LAUNCH_BP)</label></td>
+    <td><?= pwaSel('infopovod_hl_field_product', $ufFieldsHl, $ipValues['infopovod_hl_field_product']) ?></td>
+</tr>
+
+<tr><td colspan="2"><hr><b>Форма оплаты</b></td></tr>
+<tr>
+    <td><label for="infopovod_payment_types">Варианты «Формы оплаты»</label></td>
+    <td>
+        <textarea name="infopovod_payment_types" id="infopovod_payment_types" rows="5" cols="40"
+            placeholder="Бесплатно&#10;Платно"><?= htmlspecialchars($ipValues['infopovod_payment_types']) ?></textarea>
+        <br><small>По одному варианту на строку. Показываются в выпадающем списке «Форма оплаты»,
+        если у статуса включён флаг PAYMENT_TYPE. Если список пуст — поле выводится как текстовое.</small>
     </td>
 </tr>
 

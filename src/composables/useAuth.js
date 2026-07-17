@@ -53,6 +53,31 @@ export function useAuth() {
     window.location.href = `https://office.rocadatech.ru/oauth/authorize/?${params}`
   }
 
+  // ── Fetch с таймаутом и ретраями ────────────────────────────────────────
+  // «Failed to fetch» на мобильных сетях/VPN часто временный — пробуем ещё раз.
+  async function fetchWithRetry(url, { retries = 2, timeoutMs = 15000 } = {}) {
+    let lastErr = null
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+      try {
+        return await fetch(url, { signal: ctrl.signal })
+      } catch (e) {
+        lastErr = e
+        // пауза перед повтором: 1с, 2с
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+        }
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+    throw new Error(
+      'Нет связи с сервером. Проверьте интернет-соединение (или VPN) и попробуйте авторизоваться снова.\n' +
+      `Техническая причина: ${lastErr?.message || 'network error'}`
+    )
+  }
+
   // ── ② OAuth2 callback: code → access_token (через Vite proxy, без CORS) ─
   async function handleOAuthCallback(code) {
     if (!CLIENT_ID) throw new Error('OAuth не настроен')
@@ -65,7 +90,7 @@ export function useAuth() {
       code,
       redirect_uri: REDIRECT,
     })
-    const tokenRes = await fetch(`/b24oauth/token/?${tokenParams}`)
+    const tokenRes = await fetchWithRetry(`/b24oauth/token/?${tokenParams}`)
 
     // Читаем как текст — если вернули HTML (форму), даём понятную ошибку
     const rawText = await tokenRes.text()
@@ -89,7 +114,7 @@ export function useAuth() {
     const accessToken = tokenData.access_token
 
     // Шаг 2: профиль пользователя через прокси /b24rest → office.rocadatech.ru/rest
-    const profileRes = await fetch(`/b24rest/user.current.json?auth=${accessToken}`)
+    const profileRes = await fetchWithRetry(`/b24rest/user.current.json?auth=${accessToken}`)
     const profileData = await profileRes.json()
 
     if (!profileData.result) {

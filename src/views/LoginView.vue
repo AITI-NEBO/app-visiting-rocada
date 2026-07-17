@@ -23,6 +23,12 @@
 
       <!-- Auth box -->
       <div class="auth-box animate-fade-in-up" style="animation-delay: 200ms">
+        <!-- Сессия истекла -->
+        <div v-if="sessionExpired" class="error-banner expired-banner">
+          <span class="material-symbols-rounded error-icon">schedule</span>
+          <span>Срок действия сессии истёк. Авторизуйтесь снова.</span>
+        </div>
+
         <!-- Error -->
         <div v-if="errorMsg" class="error-banner">
           <span class="material-symbols-rounded error-icon">error</span>
@@ -72,6 +78,9 @@ const auth   = useAuth()
 
 const loading  = ref(false)
 const errorMsg = ref('')
+
+// Пользователь попал сюда после истечения токена (редирект из useApi по 401)
+const sessionExpired = ref(route.query.expired === '1')
 
 function handleOAuth() {
   errorMsg.value = ''
@@ -218,6 +227,12 @@ function handleOAuth() {
   color: #fca5a5;
   font-size: var(--font-size-sm);
   line-height: 1.4;
+}
+
+.expired-banner {
+  background: rgba(245,158,11,.12);
+  border-color: rgba(245,158,11,.3);
+  color: #fcd34d;
 }
 .error-icon { font-size: 18px; flex-shrink: 0; color: #ef4444; margin-top: 1px; }
 

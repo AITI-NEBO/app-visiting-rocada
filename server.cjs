@@ -20,6 +20,9 @@ async function proxyFetch(targetUrl, req, res) {
     const fetchOptions = {
       method: req.method,
       headers,
+      // Таймаут 25с: иначе зависший запрос к порталу превращается
+      // у клиента в невнятный «Failed to fetch»
+      signal: AbortSignal.timeout(25000),
     };
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -38,7 +41,13 @@ async function proxyFetch(targetUrl, req, res) {
       .send(text);
   } catch (err) {
     console.error(`[proxy] fetch error for ${targetUrl}:`, err.message);
-    res.status(502).json({ error: 'proxy_error', message: err.message });
+    const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
+    res.status(isTimeout ? 504 : 502).json({
+      success: false,
+      error: isTimeout
+        ? 'Портал Битрикс24 не ответил вовремя. Попробуйте ещё раз.'
+        : 'Нет связи с порталом Битрикс24: ' + err.message,
+    });
   }
 }
 

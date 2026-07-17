@@ -93,7 +93,7 @@
           <span class="material-symbols-rounded" style="font-size:18px">edit_note</span>
           Комментарий
         </h4>
-        <textarea v-model="comment" class="note-textarea" rows="3" placeholder="Опишите итог визита…"></textarea>
+        <textarea v-model="comment" class="note-textarea" rows="3" placeholder="Комментарий в таймлайн сделки"></textarea>
       </div>
 
       <!-- Removed photos section based on user request (only shown in service view) -->

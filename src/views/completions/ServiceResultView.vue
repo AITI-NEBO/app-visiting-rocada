@@ -98,7 +98,7 @@
           <span class="material-symbols-rounded" style="font-size:18px">edit_note</span>
           Описание выполненных работ
         </h4>
-        <textarea v-model="comment" class="note-textarea" rows="4" placeholder="Опишите что было сделано…"></textarea>
+        <textarea v-model="comment" class="note-textarea" rows="4" placeholder="Комментарий в таймлайн сделки"></textarea>
       </div>
 
       <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>

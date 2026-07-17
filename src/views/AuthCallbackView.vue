@@ -8,7 +8,8 @@
       <template v-if="error">
         <p class="callback-title error-title">Ошибка входа</p>
         <p class="callback-msg">{{ error }}</p>
-        <button class="retry-btn" @click="goLogin">← Вернуться</button>
+        <button class="retry-btn" @click="retryAuth">Авторизоваться снова</button>
+        <button class="retry-btn secondary" @click="goLogin">← На страницу входа</button>
       </template>
       <template v-else>
         <p class="callback-title">Завершаем вход...</p>
@@ -25,7 +26,7 @@ import { useAuth } from '../composables/useAuth.js'
 
 const router = useRouter()
 const route  = useRoute()
-const { handleOAuthCallback } = useAuth()
+const { handleOAuthCallback, loginOAuth } = useAuth()
 
 const error = ref(null)
 
@@ -57,6 +58,16 @@ onMounted(async () => {
 
 function goLogin() {
   router.replace('/login')
+}
+
+// Перезапускаем OAuth-флоу с нуля: одноразовый code уже использован,
+// повторный обмен невозможен — нужен новый редирект на авторизацию Б24
+function retryAuth() {
+  try {
+    loginOAuth()
+  } catch (e) {
+    error.value = e.message
+  }
 }
 </script>
 
@@ -124,6 +135,17 @@ function goLogin() {
 
 .retry-btn:hover {
   background: var(--color-bg-tertiary);
+}
+
+.retry-btn:first-of-type {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary));
+  color: white;
+  border: none;
+}
+
+.retry-btn.secondary {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
 }
 
 @keyframes spin {

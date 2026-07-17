@@ -9,7 +9,16 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo.jpeg'],
+      includeAssets: ['logo.jpeg', 'fonts/*.woff2'],
+      workbox: {
+        // По умолчанию прекешируются только js/css/html — шрифты не попадали
+        // в кеш SW, из-за чего на плохой сети иконки отображались текстом.
+        globPatterns: ['**/*.{js,css,html,woff2,svg,jpeg}'],
+        // ttf оставляем вне прекеша (1.2 МБ, дублирует woff2)
+        globIgnores: ['**/*.ttf'],
+        // API-запросы никогда не кешируем
+        navigateFallbackDenylist: [/^\/b24api/, /^\/b24oauth/, /^\/b24rest/],
+      },
       manifest: {
         name: 'RocadaMed — Выездные сотрудники',
         short_name: 'RocadaMed',
