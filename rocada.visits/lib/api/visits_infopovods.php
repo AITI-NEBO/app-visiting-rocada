@@ -50,9 +50,28 @@ function getInfopovodSettings(string $mid = 'rocada.visits'): array
         'hl_field_phone'          => $opt('infopovod_hl_field_phone', 'UF_PHONE'),
         'hl_field_payment_type'   => $opt('infopovod_hl_field_payment_type', 'UF_PAYMENT_TYPE'),
         'hl_field_product'        => $opt('infopovod_hl_field_product', 'UF_PRODUCT'),
-        // Варианты «Формы оплаты» (по одному на строку в настройках)
+        // Варианты «Формы оплаты» (по одному на строку в настройках, формат «Название=ID»)
         'payment_types'           => $paymentTypes,
     ];
+}
+
+/**
+ * Варианты «Формы оплаты» для селекта в PWA: [{id, name}, ...].
+ * Берутся из настроек модуля (таб «Инфоповоды»), строка = «Название=ID».
+ * Пользователь в PWA видит название, в HL-блок уходит ID (например «Бесплатно» → 2875).
+ * Если ID не указан («Название» без «=») — уходит само название.
+ */
+function pwaGetPaymentTypeOptions(array $cfg): array
+{
+    $options = [];
+    foreach ($cfg['payment_types'] as $line) {
+        $parts = explode('=', $line, 2);
+        $name  = trim($parts[0]);
+        if ($name === '') continue;
+        $id = isset($parts[1]) && trim($parts[1]) !== '' ? trim($parts[1]) : $name;
+        $options[] = ['id' => $id, 'name' => $name];
+    }
+    return $options;
 }
 
 /**
@@ -143,9 +162,11 @@ function getInfopovods(int $dealId, array $cfg): void
         pwaSendError('Deal not found', 404);
     }
 
+    $paymentTypeOptions = pwaGetPaymentTypeOptions($cfg);
+
     $infopovodIds = $dbDeal[$dealField] ?? null;
     if (empty($infopovodIds) || !is_array($infopovodIds)) {
-        pwaSendJson(['items' => [], 'payment_types' => $cfg['payment_types']]);
+        pwaSendJson(['items' => [], 'payment_types' => $paymentTypeOptions]);
     }
 
     // 1. Получаем сами инфоповоды (по ID — уникальны в рамках системы)
@@ -237,7 +258,7 @@ function getInfopovods(int $dealId, array $cfg): void
     pwaSendJson([
         'company_id' => $dbDeal['COMPANY_ID'],
         'items' => $resultItems,
-        'payment_types' => $cfg['payment_types'],
+        'payment_types' => $paymentTypeOptions,
     ]);
 }
 

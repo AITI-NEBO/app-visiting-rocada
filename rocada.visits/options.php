@@ -807,10 +807,10 @@ $tabControl->BeginNextTab();
 <tr>
     <td><label for="infopovod_payment_types">Варианты «Формы оплаты»</label></td>
     <td>
-        <textarea name="infopovod_payment_types" id="infopovod_payment_types" rows="5" cols="40"
-            placeholder="Бесплатно&#10;Платно"><?= htmlspecialchars($ipValues['infopovod_payment_types']) ?></textarea>
-        <br><small>По одному варианту на строку. Показываются в выпадающем списке «Форма оплаты»,
-        если у статуса включён флаг PAYMENT_TYPE. Если список пуст — поле выводится как текстовое.</small>
+        <textarea name="infopovod_payment_types" id="infopovod_payment_types" rows="6" cols="50"
+            placeholder="Бесплатно=2875&#10;За покупку товара=2876"><?= htmlspecialchars($ipValues['infopovod_payment_types']) ?></textarea>
+        <br><small>По одному варианту на строку, формат: <b>Название=ID</b>. Пользователь в PWA видит название,
+        в HL-блок уходит ID. Если список пуст — поле в PWA выводится как текстовое.</small>
     </td>
 </tr>
 

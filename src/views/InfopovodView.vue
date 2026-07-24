@@ -80,7 +80,7 @@
                 <label>Форма оплаты</label>
                 <select v-if="paymentTypes.length" class="form-select" v-model="formData[item.id].payment_type">
                   <option value="">Выберите форму оплаты (опц.)</option>
-                  <option v-for="pt in paymentTypes" :key="pt" :value="pt">{{ pt }}</option>
+                  <option v-for="pt in paymentTypes" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
                 </select>
                 <input v-else type="text" class="form-input" v-model="formData[item.id].payment_type" />
               </div>
@@ -176,7 +176,11 @@ onMounted(async () => {
   try {
     const res = await fetchInfopovods(visitId)
     items.value = res.items || []
-    paymentTypes.value = res.payment_types || []
+    // Бэкенд отдаёт [{id, name}] (в HL уходит id — ID значения списка);
+    // на всякий случай поддерживаем и старый формат простых строк
+    paymentTypes.value = (res.payment_types || []).map(pt =>
+      (pt && typeof pt === 'object') ? pt : { id: String(pt), name: String(pt) }
+    )
 
     // Initialize form data
     items.value.forEach(item => {
