@@ -111,13 +111,24 @@ function handleVisitsResult(array $params): void
         }
     }
 
-    // Меняем стадию если указана — через REST API от имени пользователя,
-    // чтобы в истории Битрикс24 отображалось что стадию сменил конкретный пользователь
+    // Флаг «Завершено из приложения» (поле Да/Нет, по умолчанию UF_DEVICE).
+    // Пишем тем же запросом, что и стадию, чтобы роботы на смене стадии уже видели флаг.
+    $deviceField  = Option::get($mid, 'device_deal_field', 'UF_DEVICE');
+    $updateFields = [];
+    if (!empty($deviceField)) {
+        $updateFields[$deviceField] = 1;
+    }
     if (!empty($targetStage)) {
+        $updateFields['STAGE_ID'] = $targetStage;
+    }
+
+    // Обновляем через REST API от имени пользователя,
+    // чтобы в истории Битрикс24 отображалось что стадию сменил конкретный пользователь
+    if (!empty($updateFields)) {
         try {
-            pwaUpdateDealViaRest((int)$dealId, ['STAGE_ID' => $targetStage]);
+            pwaUpdateDealViaRest((int)$dealId, $updateFields);
         } catch (\RuntimeException $e) {
-            pwaSendError('Ошибка смены стадии: ' . $e->getMessage(), 500);
+            pwaSendError('Ошибка обновления сделки: ' . $e->getMessage(), 500);
         }
     }
 
