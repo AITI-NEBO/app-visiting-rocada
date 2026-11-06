@@ -20,7 +20,7 @@
     </div>
 
     <div v-else class="vp-buttons">
-      <label class="vp-btn vp-btn-main">
+      <label class="vp-btn vp-btn-main" @click="warmUpGeo">
         <span class="material-symbols-rounded">photo_camera</span>
         Сделать фото
         <input type="file" accept="image/*" capture="environment" hidden @change="e => onPick(e, 'camera')" />
@@ -32,7 +32,39 @@
       </label>
     </div>
 
-    <p class="vp-note">
+    <!-- Что удалось определить по фото — менеджер видит это до отправки -->
+    <div v-if="modelValue" class="vp-meta">
+      <div class="vp-meta-row" :class="modelValue.meta.taken_at ? 'ok' : 'bad'">
+        <span class="material-symbols-rounded">{{ modelValue.meta.taken_at ? 'event_available' : 'event_busy' }}</span>
+        <span v-if="modelValue.meta.taken_at">Дата съёмки: {{ formatDate(modelValue.meta.taken_at) }}</span>
+        <span v-else>Дата съёмки не определена</span>
+      </div>
+      <div class="vp-meta-row" :class="hasGeo ? 'ok' : 'bad'">
+        <span class="material-symbols-rounded">{{ hasGeo ? 'location_on' : 'location_off' }}</span>
+        <span v-if="hasGeo">
+          Место съёмки определено
+          <template v-if="modelValue.meta.geo_source === 'exif'">по метаданным фото</template>
+          <template v-else-if="modelValue.meta.geo_source === 'device'">по телефону<template v-if="modelValue.meta.accuracy"> (±{{ Math.round(modelValue.meta.accuracy) }} м)</template></template>
+          <template v-else-if="modelValue.meta.geo_source === 'checkin'">по отметке на шаге геолокации</template>
+        </span>
+        <span v-else>Место съёмки не определено{{ geoError ? ': ' + geoError : '' }}</span>
+      </div>
+      <button
+        v-if="!hasGeo && canRetryGeo"
+        class="vp-retry"
+        type="button"
+        :disabled="locating"
+        @click="retryGeo"
+      >
+        <span class="material-symbols-rounded" :class="{ spin: locating }">{{ locating ? 'progress_activity' : 'my_location' }}</span>
+        {{ locating ? 'Определяем местоположение…' : 'Определить местоположение ещё раз' }}
+      </button>
+      <p v-if="!modelValue.meta.taken_at || !hasGeo" class="vp-warn">
+        Без даты и места съёмки визит будет отмечен как «Неверная геолокация».
+      </p>
+    </div>
+
+    <p v-else class="vp-note">
       Фото из галереи без даты и геолокации съёмки отмечаются как «Неверная геолокация».
       Надёжнее снимать через «Сделать фото».
     </p>
@@ -40,10 +72,10 @@
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
-  // { file, preview, meta: { source, taken_at, lat, lng } } | null
+  // { file, preview, meta: { source, taken_at, lat, lng, accuracy, geo_source, exif_* } } | null
   modelValue: { type: Object, default: null },
   // Координаты с шага геолокации — запасной вариант, если телефон не отдаст их повторно
   fallbackLat: { type: [String, Number], default: '' },
@@ -51,10 +83,90 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-const reading = ref(false)
+const reading  = ref(false)
+const locating = ref(false)
+const geoError = ref('')
 
 // Снимок камерой считаем свежим, если файл создан не раньше этого срока
 const CAMERA_FRESH_MS = 10 * 60 * 1000
+// Позиция телефона годится для фото, если получена не раньше этого срока до/после съёмки
+const POSITION_MAX_AGE_MS = 2 * 60 * 1000
+
+const hasGeo = computed(() => {
+  const m = props.modelValue?.meta
+  return m && Number.isFinite(m.lat) && Number.isFinite(m.lng)
+})
+
+// Повторно запросить геолокацию можно только для свежего снимка камерой
+const canRetryGeo = computed(() => {
+  const v = props.modelValue
+  return v?.meta?.source === 'camera' && Date.now() - v.file.lastModified < CAMERA_FRESH_MS
+})
+
+// ── Геолокация: следим за позицией заранее, пока открыт блок фото ──
+// Так к моменту съёмки координаты уже есть, и не надо ждать GPS после неё.
+let watchId = null
+let lastPos = null // { lat, lng, accuracy, ts }
+
+function savePos(pos) {
+  const p = {
+    lat: pos.coords.latitude,
+    lng: pos.coords.longitude,
+    accuracy: pos.coords.accuracy,
+    ts: pos.timestamp || Date.now(),
+  }
+  // Берём более свежую, а при равной свежести — более точную
+  if (!lastPos || p.ts - lastPos.ts > 30000 || p.accuracy <= lastPos.accuracy) {
+    lastPos = p
+  }
+  geoError.value = ''
+}
+
+function geoErrorText(err) {
+  if (!navigator.geolocation) return 'телефон не поддерживает геолокацию'
+  if (err?.code === 1) return 'нет доступа к геолокации, разрешите его в настройках браузера'
+  if (err?.code === 3) return 'телефон не успел определить местоположение'
+  return 'не удалось получить местоположение'
+}
+
+function warmUpGeo() {
+  if (!navigator.geolocation || watchId !== null) return
+  watchId = navigator.geolocation.watchPosition(
+    savePos,
+    err => { geoError.value = geoErrorText(err) },
+    { enableHighAccuracy: true, maximumAge: 30000, timeout: 30000 }
+  )
+}
+
+function stopWatch() {
+  if (watchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(watchId)
+  }
+  watchId = null
+}
+
+function getPosition(options) {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) {
+      geoError.value = geoErrorText(null)
+      return resolve(null)
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => { savePos(pos); resolve(lastPos) },
+      err => { geoError.value = geoErrorText(err); resolve(null) },
+      options
+    )
+  })
+}
+
+// Позиция на момент съёмки: сохранённая из слежения → точный запрос → грубый запрос
+async function positionForShot(shotTs) {
+  if (lastPos && Math.abs(lastPos.ts - shotTs) < POSITION_MAX_AGE_MS) return lastPos
+  const precise = await getPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
+  if (precise) return precise
+  if (geoError.value && geoError.value.startsWith('нет доступа')) return null
+  return getPosition({ enableHighAccuracy: false, timeout: 10000, maximumAge: POSITION_MAX_AGE_MS })
+}
 
 async function readExif(file) {
   try {
@@ -74,23 +186,13 @@ async function readExif(file) {
   }
 }
 
-function currentPosition() {
-  return new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(null)
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { timeout: 15000, enableHighAccuracy: true, maximumAge: 60000 }
-    )
-  })
-}
-
 async function onPick(e, picked) {
   const file = e.target.files?.[0]
   e.target.value = ''
   if (!file) return
 
   reading.value = true
+  geoError.value = ''
   try {
     const exif = await readExif(file)
 
@@ -99,36 +201,73 @@ async function onPick(e, picked) {
     const fresh  = file.lastModified && Date.now() - file.lastModified < CAMERA_FRESH_MS
     const source = picked === 'camera' && fresh ? 'camera' : 'gallery'
 
-    let takenAt = exif.takenAt || null
-    let lat     = exif.lat ?? null
-    let lng     = exif.lng ?? null
+    const meta = {
+      source,
+      taken_at: exif.takenAt ? exif.takenAt.toISOString() : null,
+      lat: exif.lat ?? null,
+      lng: exif.lng ?? null,
+      accuracy: null,
+      geo_source: exif.lat != null ? 'exif' : null,
+      // Метаданные фото отдельно — сервер сверит их с данными телефона
+      exif_taken_at: exif.takenAt ? exif.takenAt.toISOString() : null,
+      exif_lat: exif.lat ?? null,
+      exif_lng: exif.lng ?? null,
+      device_taken_at: null,
+      device_lat: null,
+      device_lng: null,
+    }
 
-    // Для снимка камерой без метаданных — время файла и текущая геолокация телефона
+    // Снимок камерой: время создания файла и геолокация телефона в момент съёмки
     if (source === 'camera') {
-      if (!takenAt) takenAt = new Date(file.lastModified)
-      if (lat === null) {
-        const pos = await currentPosition()
+      meta.device_taken_at = new Date(file.lastModified).toISOString()
+      if (!meta.taken_at) meta.taken_at = meta.device_taken_at
+      const pos = await positionForShot(file.lastModified)
+      if (pos) {
+        meta.device_lat = pos.lat
+        meta.device_lng = pos.lng
+        meta.accuracy   = pos.accuracy
+      }
+      if (meta.lat === null) {
         if (pos) {
-          lat = pos.lat; lng = pos.lng
+          meta.lat = pos.lat; meta.lng = pos.lng; meta.geo_source = 'device'
         } else if (props.fallbackLat && props.fallbackLng) {
-          lat = parseFloat(props.fallbackLat); lng = parseFloat(props.fallbackLng)
+          meta.lat = parseFloat(props.fallbackLat); meta.lng = parseFloat(props.fallbackLng)
+          meta.geo_source = 'checkin'
         }
       }
     }
 
-    emit('update:modelValue', {
-      file,
-      preview: URL.createObjectURL(file),
-      meta: {
-        source,
-        taken_at: takenAt ? takenAt.toISOString() : null,
-        lat,
-        lng,
-      },
-    })
+    emit('update:modelValue', { file, preview: URL.createObjectURL(file), meta })
   } finally {
     reading.value = false
   }
+}
+
+async function retryGeo() {
+  const v = props.modelValue
+  if (!v || locating.value) return
+  locating.value = true
+  try {
+    const pos = await getPosition({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
+      || await getPosition({ enableHighAccuracy: false, timeout: 15000, maximumAge: 0 })
+    if (pos) {
+      emit('update:modelValue', {
+        ...v,
+        meta: {
+          ...v.meta,
+          lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy, geo_source: 'device',
+          device_lat: pos.lat, device_lng: pos.lng,
+        },
+      })
+    }
+  } finally {
+    locating.value = false
+  }
+}
+
+function formatDate(iso) {
+  const d = new Date(iso)
+  return isNaN(d) ? '' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function clear() {
@@ -136,7 +275,10 @@ function clear() {
   emit('update:modelValue', null)
 }
 
+onMounted(warmUpGeo)
+
 onBeforeUnmount(() => {
+  stopWatch()
   if (props.modelValue?.preview) URL.revokeObjectURL(props.modelValue.preview)
 })
 </script>
@@ -155,6 +297,15 @@ onBeforeUnmount(() => {
 .vp-preview img { width: 100%; max-height: 280px; object-fit: cover; display: block; }
 .vp-remove { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.6); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; }
 .vp-remove .material-symbols-rounded { font-size: 18px; }
+.vp-meta { display: flex; flex-direction: column; gap: 6px; }
+.vp-meta-row { display: flex; align-items: center; gap: 6px; font-size: var(--font-size-xs); }
+.vp-meta-row .material-symbols-rounded { font-size: 16px; }
+.vp-meta-row.ok { color: var(--color-success, #2e7d32); }
+.vp-meta-row.bad { color: var(--color-danger); }
+.vp-retry { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--color-primary); background: transparent; color: var(--color-primary); font-size: var(--font-size-sm); cursor: pointer; }
+.vp-retry:disabled { opacity: 0.6; cursor: default; }
+.vp-retry .material-symbols-rounded { font-size: 18px; }
+.vp-warn { font-size: var(--font-size-xs); color: var(--color-danger); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

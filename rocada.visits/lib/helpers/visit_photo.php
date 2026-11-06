@@ -9,8 +9,10 @@
  *
  * Источники даты и места съёмки (по приоритету):
  *   1. EXIF файла, прочитанный на сервере (если есть расширение exif);
- *   2. данные из приложения: EXIF, прочитанный на телефоне (например HEIC),
- *      а для снимка камерой — время и геолокация телефона в момент съёмки.
+ *   2. EXIF, прочитанный в приложении (например HEIC, который сервер не читает);
+ *   3. для снимка камерой — время и геолокация телефона в момент съёмки
+ *      (браузеры телефонов обычно вырезают GPS из фото).
+ * Если есть и метаданные фото, и данные телефона — они сверяются между собой.
  */
 
 use Bitrix\Main\Loader;
@@ -79,7 +81,7 @@ function pwaDistanceMeters(float $lat1, float $lng1, float $lat2, float $lng2): 
  */
 function pwaReadPhotoExif(string $path): array
 {
-    $result = ['taken_at' => null, 'lat' => null, 'lng' => null];
+    $result = ['taken_at' => null, 'has_offset' => false, 'lat' => null, 'lng' => null];
     if (!function_exists('exif_read_data')) {
         return $result;
     }
@@ -92,11 +94,13 @@ function pwaReadPhotoExif(string $path): array
     if (is_string($raw) && $raw !== '') {
         // EXIF хранит локальное время телефона; смещение (если есть) — отдельным тегом
         $offset = $exif['OffsetTimeOriginal'] ?? $exif['OffsetTime'] ?? '';
-        $dt = preg_match('/^[+-]\d{2}:\d{2}$/', (string)$offset)
+        $hasOffset = (bool)preg_match('/^[+-]\d{2}:\d{2}$/', (string)$offset);
+        $dt = $hasOffset
             ? \DateTime::createFromFormat('Y:m:d H:i:sP', $raw . $offset)
             : \DateTime::createFromFormat('Y:m:d H:i:s', $raw);
         if ($dt) {
-            $result['taken_at'] = $dt;
+            $result['taken_at']   = $dt;
+            $result['has_offset'] = $hasOffset;
         }
     }
 
@@ -156,26 +160,55 @@ function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int 
     $source = ($clientMeta['source'] ?? '') === 'camera' ? 'camera' : 'gallery';
     $exif   = pwaReadPhotoExif($path);
 
-    // Дата съёмки: EXIF на сервере → данные приложения
-    $takenAt = $exif['taken_at'];
-    if (!$takenAt && !empty($clientMeta['taken_at'])) {
+    $parseDate = static function ($v) use ($tz): ?\DateTime {
+        if (empty($v)) {
+            return null;
+        }
         try {
-            $takenAt = new \DateTime((string)$clientMeta['taken_at']);
+            return (new \DateTime((string)$v))->setTimezone($tz);
         } catch (\Exception $e) {
-            $takenAt = null;
+            return null;
+        }
+    };
+    $coords = static function ($lat, $lng): ?array {
+        if (!is_numeric($lat) || !is_numeric($lng) || ((float)$lat == 0 && (float)$lng == 0)) {
+            return null;
+        }
+        return ['lat' => (float)$lat, 'lng' => (float)$lng];
+    };
+
+    // Метаданные самого фото: EXIF на сервере → EXIF, прочитанный в приложении (например HEIC).
+    // Дату без часового пояса приложение читает по времени телефона, а сервер — по Москве,
+    // поэтому в этом случае точнее дата из приложения.
+    $clientExifDate = $parseDate($clientMeta['exif_taken_at'] ?? null);
+    $exifDate = $exif['taken_at'] && ($exif['has_offset'] || !$clientExifDate)
+        ? $exif['taken_at']->setTimezone($tz)
+        : $clientExifDate;
+    $exifGeo  = $coords($exif['lat'], $exif['lng'])
+        ?? $coords($clientMeta['exif_lat'] ?? null, $clientMeta['exif_lng'] ?? null);
+
+    // Данные телефона в момент съёмки (только для снимка камерой в приложении)
+    $deviceDate = $source === 'camera'
+        ? $parseDate($clientMeta['device_taken_at'] ?? ($clientMeta['taken_at'] ?? null))
+        : null;
+    $deviceGeo  = null;
+    $geoSource  = null;
+    if ($source === 'camera') {
+        $deviceGeo = $coords($clientMeta['device_lat'] ?? null, $clientMeta['device_lng'] ?? null);
+        if ($deviceGeo) {
+            $geoSource = 'device';
+        } elseif (($clientMeta['geo_source'] ?? '') === 'checkin') {
+            $deviceGeo = $coords($clientMeta['lat'] ?? null, $clientMeta['lng'] ?? null);
+            $geoSource = $deviceGeo ? 'checkin' : null;
         }
     }
-    if ($takenAt) {
-        $takenAt->setTimezone($tz);
-    }
+    $accuracy = is_numeric($clientMeta['accuracy'] ?? null) ? (int)round((float)$clientMeta['accuracy']) : null;
 
-    // Место съёмки: EXIF на сервере → данные приложения
-    $lat = $exif['lat'];
-    $lng = $exif['lng'];
-    if ($lat === null && isset($clientMeta['lat'], $clientMeta['lng'])
-        && is_numeric($clientMeta['lat']) && is_numeric($clientMeta['lng'])) {
-        $lat = (float)$clientMeta['lat'];
-        $lng = (float)$clientMeta['lng'];
+    // Приоритет — метаданные фото, их нельзя подменить из приложения
+    $takenAt = $exifDate ?? $deviceDate;
+    $geo     = $exifGeo ?? $deviceGeo;
+    if ($exifGeo) {
+        $geoSource = 'exif';
     }
 
     $reasons  = [];
@@ -188,14 +221,27 @@ function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int 
         $reasons[] = 'фото снято ' . $takenAt->format('d.m.Y') . ', а визит проводится ' . date('d.m.Y');
     }
 
-    if ($lat === null || $lng === null) {
+    // Снимок камерой: дата в метаданных должна совпадать со временем съёмки в приложении
+    if ($exifDate && $deviceDate && abs($exifDate->getTimestamp() - $deviceDate->getTimestamp()) > 15 * 60) {
+        $reasons[] = 'дата в метаданных фото (' . $exifDate->format('d.m.Y H:i') . ') не совпадает со временем съёмки';
+    }
+
+    if (!$geo) {
         $reasons[] = 'нет геолокации съёмки';
     } elseif (!$point) {
         $reasons[] = 'у точки визита не заполнены координаты';
     } else {
-        $distance = pwaDistanceMeters($lat, $lng, $point['lat'], $point['lng']);
+        $distance = pwaDistanceMeters($geo['lat'], $geo['lng'], $point['lat'], $point['lng']);
         if ($distance > $maxDistance) {
             $reasons[] = "фото снято в {$distance} м от точки визита (допустимо {$maxDistance} м)";
+        }
+    }
+
+    // Снимок камерой: место в метаданных фото должно совпадать с геолокацией телефона
+    if ($exifGeo && $deviceGeo && $geoSource === 'exif') {
+        $gap = pwaDistanceMeters($exifGeo['lat'], $exifGeo['lng'], $deviceGeo['lat'], $deviceGeo['lng']);
+        if ($gap > $maxDistance) {
+            $reasons[] = "место в метаданных фото и геолокация телефона расходятся на {$gap} м";
         }
     }
 
@@ -204,8 +250,11 @@ function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int 
         'reasons'    => $reasons,
         'source'     => $source,
         'taken_at'   => $takenAt,
-        'lat'        => $lat,
-        'lng'        => $lng,
+        'lat'        => $geo['lat'] ?? null,
+        'lng'        => $geo['lng'] ?? null,
+        'geo_source' => $geoSource,
+        'accuracy'   => $geoSource === 'device' ? $accuracy : null,
+        'has_exif'   => $exifDate !== null || $exifGeo !== null,
         'distance_m' => $distance,
     ];
 }
@@ -255,6 +304,18 @@ function pwaVisitPhotoCheckText(array $check): string
     $lines[] = '📷 Фото входной группы: ' . ($check['source'] === 'camera' ? 'снято камерой в приложении' : 'загружено из галереи');
     if ($check['taken_at']) {
         $lines[] = 'Дата съёмки: ' . $check['taken_at']->format('d.m.Y H:i');
+    }
+    $geoSources = [
+        'exif'    => 'по метаданным фото',
+        'device'  => 'по геолокации телефона в момент съёмки',
+        'checkin' => 'по отметке на шаге геолокации',
+    ];
+    if (!empty($check['geo_source'])) {
+        $lines[] = 'Место съёмки: ' . $geoSources[$check['geo_source']]
+            . (!empty($check['accuracy']) ? " (точность ±{$check['accuracy']} м)" : '');
+    }
+    if (!$check['has_exif']) {
+        $lines[] = 'Метаданных в фото нет';
     }
     if ($check['distance_m'] !== null) {
         $lines[] = "Расстояние до точки: {$check['distance_m']} м";
