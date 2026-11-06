@@ -46,6 +46,17 @@ function pwaGetUfFields(string $entityId = 'CRM_DEAL'): array
 
 function getPwaDealUfFields(): array { return pwaGetUfFields('CRM_DEAL'); }
 
+// Только файловые UF-поля сделки (для фото входной группы)
+function getPwaDealFileFieldCodes(): array
+{
+    $codes = [];
+    $rs = \CUserTypeEntity::GetList([], ['ENTITY_ID' => 'CRM_DEAL', 'USER_TYPE_ID' => 'file']);
+    while ($f = $rs->Fetch()) {
+        $codes[] = $f['FIELD_NAME'];
+    }
+    return $codes;
+}
+
 // ── Инфоблоки и HL-блоки (для таба «Инфоповоды») ──────────────────────────
 function pwaGetIblocks(): array
 {
@@ -161,6 +172,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                     'comment_field'    => $d['comment_field']    ?? '',
                     'visit_date_field' => $d['visit_date_field'] ?? '',
                     'checkin_field'    => $d['checkin_field']    ?? '',
+                    'photo_field'           => $d['photo_field'] ?? '',
+                    'photo_wrong_geo_field' => $d['photo_wrong_geo_field'] ?? '',
+                    'photo_max_distance'    => max(1, (int)($d['photo_max_distance'] ?? 100) ?: 100),
                     'deal_fields'      => array_values(array_filter($d['deal_fields'] ?? [])),
                     'allowed_users'    => array_values(array_filter(array_map('intval', $d['allowed_users'] ?? []))),
                     'result_statuses'  => $resultStatuses,
@@ -344,6 +358,11 @@ $jsData['ufFields'] = [];
 foreach ($ufFieldsDeal as $code => $label) {
     $jsData['ufFields'][] = ['id' => $code, 'name' => $label];
 }
+$dealFileCodes = getPwaDealFileFieldCodes();
+$jsData['ufFileFields'] = array_values(array_filter(
+    $jsData['ufFields'],
+    fn($f) => in_array($f['id'], $dealFileCodes, true)
+));
 ?>
 <script>
 (function() {
@@ -352,6 +371,7 @@ foreach ($ufFieldsDeal as $code => $label) {
     const stages     = DATA.stages;
     const categories = DATA.categories;
     const ufFields   = DATA.ufFields;
+    const ufFileFields = DATA.ufFileFields || [];
     const users      = DATA.users;
 
     const ICONS = ['briefcase','wrench','star','truck','phone','map','settings','users'];
@@ -367,6 +387,7 @@ foreach ($ufFieldsDeal as $code => $label) {
             map_deals_scope: 'all',
             pipelines: [], stages_today: [], stages_tomorrow: [], stages_planned: [], stages_map: [],
             lat_field: '', lng_field: '', comment_field: '', visit_date_field: '', checkin_field: '',
+            photo_wrong_geo_field: '', photo_max_distance: 100, photo_field: '',
             deal_fields: [], allowed_users: [],
             result_statuses: []
         };
@@ -538,6 +559,8 @@ foreach ($ufFieldsDeal as $code => $label) {
         const comHtml   = buildSelect('com_'+dir.id, ufFields, dir.comment_field|| '', false, 'id', 'name', true);
         const vdHtml    = buildSelect('vd_'+dir.id,  ufFields, dir.visit_date_field||'', false, 'id', 'name', true);
         const chkHtml   = buildSelect('chk_'+dir.id, ufFields, dir.checkin_field||'', false, 'id', 'name', true);
+        const wgHtml    = buildSelect('wg_'+dir.id,  ufFields, dir.photo_wrong_geo_field||'', false, 'id', 'name', true);
+        const phHtml    = buildSelect('ph_'+dir.id,  ufFileFields, dir.photo_field||'', false, 'id', 'name', true);
         const usersHtml = buildSelect('usr_'+dir.id, users, (dir.allowed_users||[]).map(Number), true, 'id', 'name', true);
 
         const statusesHtml = statuses.map(s => renderStatus(dir.id, s, isService)).join('');
@@ -576,6 +599,11 @@ foreach ($ufFieldsDeal as $code => $label) {
             <tr><td>Поле комментария:</td><td>${comHtml}</td></tr>
             <tr><td>Поле даты визита:</td><td>${vdHtml}</td></tr>
             <tr><td>Поле даты/времени чекина:<br><small>Заполняется при подтверждении геолокации (например UF_DATA_VREMIA_CHEKIN)</small></td><td>${chkHtml}</td></tr>
+            <tr><td colspan="2"><hr style="margin:6px 0"><b>Фото входной группы</b>
+              <span style="font-weight:normal;color:#888;font-size:12px"> — обязательно при завершении визита</span></td></tr>
+            <tr><td>Поле для фото:<br><small>Файловое поле сделки. Множественное — фото добавляется к уже загруженным</small></td><td>${phHtml}</td></tr>
+            <tr><td>Поле «Неверная геолокация»:<br><small>Да/Нет. «Нет» — дата и место фото подтверждены, «Да» — нет</small></td><td>${wgHtml}</td></tr>
+            <tr><td>Допустимое расстояние, м:<br><small>От места съёмки до точки визита</small></td><td><input type="number" min="1" step="1" class="dir-photo-dist" value="${escHtml(dir.photo_max_distance||100)}" style="width:120px"></td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0">
               <b>Статусы завершения</b>
               <span style="font-weight:normal;color:#888;font-size:12px"> — видны сотруднику в PWA. Пустая стадия = не менять.</span>
@@ -626,6 +654,9 @@ foreach ($ufFieldsDeal as $code => $label) {
             comment_field:    getSingle('#com_'+id),
             visit_date_field: getSingle('#vd_'+id),
             checkin_field:    getSingle('#chk_'+id),
+            photo_field:           getSingle('#ph_'+id),
+            photo_wrong_geo_field: getSingle('#wg_'+id),
+            photo_max_distance:    parseInt(getSingle('.dir-photo-dist'), 10) || 100,
             allowed_users:    getMulti('#usr_'+id).map(Number),
             result_statuses:  resultStatuses,
         };

@@ -4,12 +4,13 @@
  * rocada.visits / lib/api/visits_result.php
  *
  * POST /api/visits/{id}/result
- * Body: {
- *   "status_id":  "rs_xxx",      // ID статуса из result_statuses направления
- *   "comment":    "...",
- *   "direction":  "dir_xxx",
- *   "distance_m": 123,           // расстояние в метрах от точки (опционально)
- * }
+ * multipart/form-data:
+ *   status_id   — ID статуса из result_statuses направления
+ *   comment     — комментарий
+ *   direction   — ID направления
+ *   distance_m  — расстояние в метрах от точки (опционально)
+ *   photo       — фото входной группы клиники (обязательно)
+ *   photo_meta  — JSON: { source: camera|gallery, taken_at: ISO 8601, lat, lng }
  */
 
 use Bitrix\Crm\DealTable;
@@ -47,9 +48,13 @@ function handleVisitsResult(array $params): void
     $checkinField = $dirCfg['checkin_field'] ?? '';
 
     // Проверяем доступ к сделке (+ читаем поле чекина, если настроено)
-    $select = ['ID', 'TITLE'];
+    $photoField = $dirCfg['photo_field'] ?? '';
+    $select = ['ID', 'TITLE', 'UF_UNLOAD_DOCS'];
     if (!empty($checkinField)) {
         $select[] = $checkinField;
+    }
+    if (!empty($photoField)) {
+        $select[] = $photoField;
     }
     $deal = DealTable::getList([
         'filter' => ['=ID' => $dealId, '=ASSIGNED_BY_ID' => $userId],
@@ -59,6 +64,23 @@ function handleVisitsResult(array $params): void
     if (!$deal) {
         pwaSendError('Визит не найден или нет доступа', 404);
     }
+
+    // Фото входной группы обязательно — без него визит не завершается
+    $photo = $params['files']['photo'] ?? null;
+    if ($photoError = pwaValidateVisitPhoto($photo)) {
+        pwaSendError($photoError, 422);
+    }
+
+    $photoMeta = json_decode((string)($body['photo_meta'] ?? ''), true);
+    $maxRange  = (int)($dirCfg['photo_max_distance'] ?? 0) ?: PWA_VISIT_PHOTO_DEFAULT_RANGE;
+    $photoCheck = pwaCheckVisitPhoto(
+        $photo['tmp_name'],
+        is_array($photoMeta) ? $photoMeta : [],
+        pwaGetUnloadPointCoords((int)($deal['UF_UNLOAD_DOCS'] ?? 0)),
+        $maxRange
+    );
+
+    $photoRestFile = pwaVisitPhotoRestFile($photo, (int)$dealId);
 
     // Подстраховка: если гео было пропущено и чекин ещё не зафиксирован —
     // фиксируем дату/время чекина в момент сохранения результата
@@ -118,6 +140,15 @@ function handleVisitsResult(array $params): void
     if (!empty($deviceField)) {
         $updateFields[$deviceField] = 1;
     }
+    // «Неверная геолокация» (Да/Нет): Нет — дата и место фото подтверждены, Да — нет
+    $wrongGeoField = $dirCfg['photo_wrong_geo_field'] ?? '';
+    if (!empty($wrongGeoField)) {
+        $updateFields[$wrongGeoField] = $photoCheck['ok'] ? 0 : 1;
+    }
+    // Фото входной группы — в файловое поле сделки
+    if (!empty($photoField)) {
+        $updateFields[$photoField] = pwaDealFileFieldValue($photoField, $photoRestFile, (array)($deal[$photoField] ?? []));
+    }
     if (!empty($targetStage)) {
         $updateFields['STAGE_ID'] = $targetStage;
     }
@@ -143,17 +174,35 @@ function handleVisitsResult(array $params): void
         $tlText .= "\n\n📍 Отметился в {$distanceM} м от точки визита";
     }
 
-    CommentEntry::create([
-        'TEXT'     => $tlText,
-        'BINDINGS' => [['ENTITY_TYPE_ID' => \CCrmOwnerType::Deal, 'ENTITY_ID' => $dealId]],
-        'AUTHOR_ID' => $userId,
-    ]);
+    // Фото входной группы: результат проверки
+    $tlText .= "\n\n" . pwaVisitPhotoCheckText($photoCheck);
+
+    // Комментарий с фото во вложении — через REST от имени пользователя,
+    // так фото показывается в таймлайне превью, а не ссылкой
+    try {
+        pwaCallRestAsUser('crm.timeline.comment.add', [
+            'fields' => [
+                'ENTITY_ID'   => (int)$dealId,
+                'ENTITY_TYPE' => 'deal',
+                'COMMENT'     => $tlText,
+                'FILES'       => [$photoRestFile],
+            ],
+        ]);
+    } catch (\RuntimeException $e) {
+        // Визит уже завершён — не роняем ответ, пишем комментарий без вложения
+        CommentEntry::create([
+            'TEXT'      => $tlText . (!empty($photoField) ? "\n\nФото сохранено в карточке сделки." : ''),
+            'BINDINGS'  => [['ENTITY_TYPE_ID' => \CCrmOwnerType::Deal, 'ENTITY_ID' => $dealId]],
+            'AUTHOR_ID' => $userId,
+        ]);
+    }
 
     pwaSendJson([
         'deal_id'     => $dealId,
         'status_id'   => $statusId,
         'status_name' => $statusLabel,
         'new_stage'   => $targetStage ?: null,
+        'photo_ok'    => $photoCheck['ok'],
         'message'     => 'Результат сохранён',
     ]);
 }

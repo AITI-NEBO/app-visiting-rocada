@@ -156,8 +156,15 @@ export function useVisits() {
     }
 
     // ── Результат визита ──────────────────────────────────────────────────
-    async function submitResult(dealId, resultData) {
-        return api.apiPost(`api/visits/${dealId}/result`, resultData)
+    // photo — { file, meta } из VisitPhotoPicker (фото входной группы, обязательно)
+    async function submitResult(dealId, resultData, photo) {
+        const fd = new FormData()
+        for (const [key, val] of Object.entries(resultData)) {
+            if (val !== undefined && val !== null) fd.append(key, val)
+        }
+        fd.append('photo', photo.file)
+        fd.append('photo_meta', JSON.stringify(photo.meta || {}))
+        return api.apiPostForm(`api/visits/${dealId}/result`, fd)
     }
 
     // ── Загрузка файлов ───────────────────────────────────────────────────

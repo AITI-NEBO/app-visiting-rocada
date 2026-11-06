@@ -96,9 +96,10 @@
         <textarea v-model="comment" class="note-textarea" rows="3" placeholder="Комментарий в таймлайн сделки"></textarea>
       </div>
 
-      <!-- Removed photos section based on user request (only shown in service view) -->
+      <!-- Фото входной группы (обязательно) -->
+      <VisitPhotoPicker v-model="entrancePhoto" :fallback-lat="geoLat" :fallback-lng="geoLng" />
 
-      <button class="primary-btn" :disabled="!selectedId || submitting" @click="submit">
+      <button class="primary-btn" :disabled="!selectedId || !entrancePhoto || submitting" @click="submit">
         <span v-if="submitting" class="material-symbols-rounded spin">progress_activity</span>
         <span v-else class="material-symbols-rounded">check</span>
         {{ submitting ? 'Сохранение…' : 'Сохранить итог' }}
@@ -139,6 +140,7 @@ import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
 import { nextTick } from 'vue'
+import VisitPhotoPicker from '../../components/VisitPhotoPicker.vue'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
@@ -146,7 +148,7 @@ const route       = useRoute()
 const router      = useRouter()
 const api         = useApi()
 const { currentDirection } = useDirections()
-const { findVisit, loadVisits } = useVisits()
+const { findVisit, loadVisits, submitResult } = useVisits()
 const mapEl       = ref(null)
 
 // Расчёт расстояния по формуле Haversine (возвращает метры)
@@ -170,6 +172,7 @@ const statuses      = ref([])
 const loadingStatuses = ref(true)
 const selectedId    = ref(null)
 const comment       = ref('')
+const entrancePhoto = ref(null)
 const submitting    = ref(false)
 const errorMsg      = ref('')
 
@@ -297,7 +300,7 @@ function skipGeo() {
 
 
 async function submit() {
-  if (!selectedId.value) return
+  if (!selectedId.value || !entrancePhoto.value) return
   submitting.value = true
   errorMsg.value   = ''
   try {
@@ -319,13 +322,13 @@ async function submit() {
         )
       }
     }
-    // 4. Результат
-    await api.apiPost(`api/visits/${props.visitId}/result`, {
+    // 4. Результат + фото входной группы
+    await submitResult(props.visitId, {
       status_id:  selectedId.value,
       comment:    comment.value,
       direction:  currentDirection.value?.id,
-      ...(distanceM !== undefined ? { distance_m: distanceM } : {}),
-    })
+      distance_m: distanceM,
+    }, entrancePhoto.value)
     // 5. Обновляем список визитов в фоне (без ожидания)
     loadVisits(true).catch(() => {})
 

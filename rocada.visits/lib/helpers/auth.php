@@ -104,9 +104,25 @@ function validateB24Token(string $token): ?int
  */
 function pwaUpdateDealViaRest(int $dealId, array $fields): bool
 {
+    return !empty(pwaCallRestAsUser('crm.deal.update', [
+        'id'     => $dealId,
+        'fields' => $fields,
+    ]));
+}
+
+/**
+ * Вызов метода REST API от имени авторизованного пользователя.
+ *
+ * @param string $method  Метод REST, например 'crm.timeline.comment.add'
+ * @param array  $params  Параметры метода
+ * @return mixed          Значение result из ответа
+ * @throws \RuntimeException при ошибке REST API
+ */
+function pwaCallRestAsUser(string $method, array $params)
+{
     $token = $GLOBALS['pwa_user_access_token'] ?? null;
     if (empty($token)) {
-        throw new \RuntimeException('pwaUpdateDealViaRest: access_token пользователя не найден. Вызовите requireAuth() перед этой функцией.');
+        throw new \RuntimeException("$method: access_token пользователя не найден. Вызовите requireAuth() перед этой функцией.");
     }
 
     $b24Base = Option::get('rocada.visits', 'b24_base_url', '');
@@ -115,20 +131,17 @@ function pwaUpdateDealViaRest(int $dealId, array $fields): bool
                  . '://' . $_SERVER['HTTP_HOST'];
     }
 
-    $url = rtrim($b24Base, '/') . '/rest/crm.deal.update.json';
+    $url = rtrim($b24Base, '/') . '/rest/' . $method . '.json';
 
-    $postData = http_build_query([
-        'auth'   => $token,
-        'id'     => $dealId,
-        'fields' => $fields,
-    ]);
+    $postData = http_build_query(['auth' => $token] + $params);
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $postData,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
+        // Запросы с фото (base64) тяжелее обычных — даём больше времени
+        CURLOPT_TIMEOUT        => 20,
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_FOLLOWLOCATION => true,
     ]);
@@ -144,13 +157,13 @@ function pwaUpdateDealViaRest(int $dealId, array $fields): bool
     $data = json_decode($body, true);
 
     if ($httpCode !== 200 || !is_array($data)) {
-        throw new \RuntimeException("REST API crm.deal.update ошибка (HTTP $httpCode): " . ($body ?: 'пустой ответ'));
+        throw new \RuntimeException("REST API $method ошибка (HTTP $httpCode): " . ($body ?: 'пустой ответ'));
     }
 
     if (isset($data['error'])) {
         $errMsg = $data['error_description'] ?? $data['error'];
-        throw new \RuntimeException('REST API crm.deal.update: ' . $errMsg);
+        throw new \RuntimeException("REST API $method: " . $errMsg);
     }
 
-    return !empty($data['result']);
+    return $data['result'] ?? null;
 }

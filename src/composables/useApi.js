@@ -39,6 +39,19 @@ export function useApi() {
     }
 
     /**
+     * POST multipart/form-data (запросы с файлами).
+     * Content-Type не задаём — браузер сам проставит boundary.
+     */
+    async function apiPostForm(route, formData) {
+        const res = await fetch(`${API_BASE}/${route}`, {
+            method: 'POST',
+            headers: buildHeaders(),
+            body: formData,
+        })
+        return handleResponse(res)
+    }
+
+    /**
      * DELETE-запрос к модулю API
      */
     async function apiDelete(route) {
@@ -84,5 +97,5 @@ export function useApi() {
         return json.data
     }
 
-    return { apiGet, apiPost, apiDelete }
+    return { apiGet, apiPost, apiPostForm, apiDelete }
 }

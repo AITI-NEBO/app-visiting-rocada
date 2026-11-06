@@ -71,6 +71,7 @@ require_once __DIR__ . '/helpers/response.php';
 require_once __DIR__ . '/helpers/auth.php';
 require_once __DIR__ . '/helpers/directions.php';
 require_once __DIR__ . '/helpers/crm.php';
+require_once __DIR__ . '/helpers/visit_photo.php';
 
 // ── ⑦ Разбор маршрута ────────────────────────────────────────────────────────
 $route = '';
@@ -97,7 +98,8 @@ $params = [
     'id'       => $id,
     'action'   => $action,
     'get'      => $_GET,
-    'body'     => (array)(json_decode(file_get_contents('php://input'), true) ?? []),
+    // JSON-тело; для multipart/form-data (запросы с файлами) — поля формы
+    'body'     => (array)(json_decode(file_get_contents('php://input'), true) ?? $_POST ?? []),
     'files'    => $_FILES,
     'moduleId' => $moduleId,
 ];

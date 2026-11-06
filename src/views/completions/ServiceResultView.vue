@@ -60,6 +60,9 @@
         </button>
       </div>
 
+      <!-- Фото входной группы (обязательно) -->
+      <VisitPhotoPicker v-model="entrancePhoto" :fallback-lat="geoLat" :fallback-lng="geoLng" />
+
       <!-- Фото (обязательно для сервиса) -->
       <div class="photo-section">
         <h4 class="note-title">
@@ -103,7 +106,7 @@
 
       <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
-      <button class="primary-btn" :disabled="!photos.length || submitting" @click="submit">
+      <button class="primary-btn" :disabled="!photos.length || !entrancePhoto || submitting" @click="submit">
         <span v-if="submitting" class="material-symbols-rounded spin">progress_activity</span>
         <span v-else class="material-symbols-rounded">task_alt</span>
         {{ submitting ? 'Сохранение…' : 'Завершить работу' }}
@@ -141,6 +144,7 @@ import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
 import { nextTick } from 'vue'
+import VisitPhotoPicker from '../../components/VisitPhotoPicker.vue'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
@@ -148,7 +152,7 @@ const route = useRoute()
 const router = useRouter()
 const api  = useApi()
 const { currentDirection } = useDirections()
-const { findVisit, loadVisits } = useVisits()
+const { findVisit, loadVisits, submitResult } = useVisits()
 const mapEl = ref(null)
 
 // Расчёт расстояния по формуле Haversine (возвращает метры)
@@ -172,6 +176,7 @@ const statuses   = ref([])
 const selectedId = ref(null)
 const comment    = ref('')
 const photos     = ref([])
+const entrancePhoto = ref(null)
 const submitting = ref(false)
 const errorMsg   = ref('')
 
@@ -290,7 +295,7 @@ function handlePhoto(e, field) {
 }
 
 async function submit() {
-  if (!photos.value.length) return
+  if (!photos.value.length || !entrancePhoto.value) return
   submitting.value = true; errorMsg.value = ''
   try {
     if (geoDone.value && geoLat.value) {
@@ -298,7 +303,8 @@ async function submit() {
     }
     for (const p of photos.value) {
       const fd = new FormData()
-      fd.append('file', p.file)
+      fd.append('files[]', p.file)
+      fd.append('type', 'photo')
       if (p.fieldCode) fd.append('field', p.fieldCode)
       fd.append('direction', currentDirection.value?.id || '')
       await api.apiPostForm(`api/visits/${props.visitId}/files`, fd)
@@ -314,12 +320,12 @@ async function submit() {
         )
       }
     }
-    await api.apiPost(`api/visits/${props.visitId}/result`, {
-      status_id: selectedId.value || null,
-      comment:   comment.value,
-      direction: currentDirection.value?.id,
-      ...(distanceM !== undefined ? { distance_m: distanceM } : {}),
-    })
+    await submitResult(props.visitId, {
+      status_id:  selectedId.value || null,
+      comment:    comment.value,
+      direction:  currentDirection.value?.id,
+      distance_m: distanceM,
+    }, entrancePhoto.value)
     // Обновляем список визитов в фоне (без ожидания)
     loadVisits(true).catch(() => {})
 
