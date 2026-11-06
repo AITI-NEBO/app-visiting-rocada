@@ -237,9 +237,40 @@ async function onPick(e, picked) {
       }
     }
 
-    emit('update:modelValue', { file, preview: URL.createObjectURL(file), meta })
+    if (meta.lat === null && geoError.value) meta.geo_error = geoError.value
+
+    // Фото с камеры весит 3–10 МБ — уменьшаем перед отправкой, чтобы завершение
+    // визита не упиралось в медленный мобильный интернет. Дата и место съёмки
+    // уже прочитаны выше и уходят на сервер в meta.
+    const upload = await compressPhoto(file)
+
+    emit('update:modelValue', { file: upload, preview: URL.createObjectURL(upload), meta })
   } finally {
     reading.value = false
+  }
+}
+
+const MAX_SIDE = 1920
+const JPEG_QUALITY = 0.85
+
+// Уменьшает фото до MAX_SIDE по большей стороне и пережимает в JPEG.
+// Если браузер не может открыть файл (например HEIC на Android) — отправляем как есть.
+async function compressPhoto(file) {
+  if (file.size < 1024 * 1024) return file
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const scale  = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width  = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close?.()
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', JPEG_QUALITY))
+    if (!blob || blob.size >= file.size) return file
+    const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], name, { type: 'image/jpeg', lastModified: file.lastModified })
+  } catch {
+    return file
   }
 }
 
@@ -251,10 +282,11 @@ async function retryGeo() {
     const pos = await getPosition({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
       || await getPosition({ enableHighAccuracy: false, timeout: 15000, maximumAge: 0 })
     if (pos) {
+      const { geo_error, ...rest } = v.meta
       emit('update:modelValue', {
         ...v,
         meta: {
-          ...v.meta,
+          ...rest,
           lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy, geo_source: 'device',
           device_lat: pos.lat, device_lng: pos.lng,
         },

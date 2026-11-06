@@ -93,7 +93,9 @@ function pwaReadPhotoExif(string $path): array
     $raw = $exif['DateTimeOriginal'] ?? $exif['DateTimeDigitized'] ?? null;
     if (is_string($raw) && $raw !== '') {
         // EXIF хранит локальное время телефона; смещение (если есть) — отдельным тегом
-        $offset = $exif['OffsetTimeOriginal'] ?? $exif['OffsetTime'] ?? '';
+        // Старые версии PHP не знают тегов смещения и отдают их как UndefinedTag
+        $offset = $exif['OffsetTimeOriginal'] ?? $exif['UndefinedTag:0x9011']
+            ?? $exif['OffsetTime'] ?? $exif['UndefinedTag:0x9010'] ?? '';
         $hasOffset = (bool)preg_match('/^[+-]\d{2}:\d{2}$/', (string)$offset);
         $dt = $hasOffset
             ? \DateTime::createFromFormat('Y:m:d H:i:sP', $raw . $offset)
@@ -221,13 +223,19 @@ function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int 
         $reasons[] = 'фото снято ' . $takenAt->format('d.m.Y') . ', а визит проводится ' . date('d.m.Y');
     }
 
-    // Снимок камерой: дата в метаданных должна совпадать со временем съёмки в приложении
-    if ($exifDate && $deviceDate && abs($exifDate->getTimestamp() - $deviceDate->getTimestamp()) > 15 * 60) {
-        $reasons[] = 'дата в метаданных фото (' . $exifDate->format('d.m.Y H:i') . ') не совпадает со временем съёмки';
+    // Снимок камерой: дата в метаданных должна совпадать со временем съёмки в приложении.
+    // Сверяем только то, что прочитано по одним часам и в одном часовом поясе:
+    // EXIF из приложения или EXIF с явным смещением — иначе получим ложную разницу в часы.
+    $exifDateForCompare = $clientExifDate ?? ($exif['has_offset'] ? $exifDate : null);
+    if ($exifDateForCompare && $deviceDate
+        && abs($exifDateForCompare->getTimestamp() - $deviceDate->getTimestamp()) > 15 * 60) {
+        $reasons[] = 'дата в метаданных фото (' . $exifDateForCompare->format('d.m.Y H:i')
+            . ') не совпадает со временем съёмки в приложении (' . $deviceDate->format('d.m.Y H:i') . ')';
     }
 
     if (!$geo) {
-        $reasons[] = 'нет геолокации съёмки';
+        $geoError  = mb_substr(trim((string)($clientMeta['geo_error'] ?? '')), 0, 150);
+        $reasons[] = 'нет геолокации съёмки' . ($geoError !== '' ? " ($geoError)" : '');
     } elseif (!$point) {
         $reasons[] = 'у точки визита не заполнены координаты';
     } else {

@@ -177,6 +177,18 @@ function handleVisitsResult(array $params): void
     // Фото входной группы: результат проверки
     $tlText .= "\n\n" . pwaVisitPhotoCheckText($photoCheck);
 
+    // Сделка уже обновлена — сразу отвечаем приложению, а комментарий с фото
+    // добавляем после ответа: загрузка файла в таймлайн небыстрая,
+    // и приложение не должно ждать её (иначе прокси обрывает запрос по таймауту)
+    pwaFinishResponse([
+        'deal_id'     => $dealId,
+        'status_id'   => $statusId,
+        'status_name' => $statusLabel,
+        'new_stage'   => $targetStage ?: null,
+        'photo_ok'    => $photoCheck['ok'],
+        'message'     => 'Результат сохранён',
+    ]);
+
     // Комментарий с фото во вложении — через REST от имени пользователя,
     // так фото показывается в таймлайне превью, а не ссылкой
     try {
@@ -197,12 +209,24 @@ function handleVisitsResult(array $params): void
         ]);
     }
 
-    pwaSendJson([
-        'deal_id'     => $dealId,
-        'status_id'   => $statusId,
-        'status_name' => $statusLabel,
-        'new_stage'   => $targetStage ?: null,
-        'photo_ok'    => $photoCheck['ok'],
-        'message'     => 'Результат сохранён',
-    ]);
+    exit;
+}
+
+/**
+ * Отправляет JSON-ответ и закрывает соединение с клиентом, не завершая скрипт.
+ * Если сервер не умеет закрывать соединение раньше (не PHP-FPM) —
+ * ответ просто уйдёт вместе с окончанием скрипта.
+ */
+function pwaFinishResponse(array $data): void
+{
+    ignore_user_abort(true);
+    http_response_code(200);
+    echo json_encode(['success' => true, 'data' => $data], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    while (ob_get_level() > 0) {
+        ob_end_flush();
+    }
+    flush();
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
 }

@@ -5,7 +5,7 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ── Универсальная вспомогательная функция ────────────────────────────────────
-async function proxyFetch(targetUrl, req, res) {
+async function proxyFetch(targetUrl, req, res, timeoutMs = 25000) {
   try {
     const headers = {
       'Accept': req.headers['accept'] || '*/*',
@@ -20,9 +20,9 @@ async function proxyFetch(targetUrl, req, res) {
     const fetchOptions = {
       method: req.method,
       headers,
-      // Таймаут 25с: иначе зависший запрос к порталу превращается
+      // Таймаут (по умолчанию 25с): иначе зависший запрос к порталу превращается
       // у клиента в невнятный «Failed to fetch»
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(timeoutMs),
     };
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -76,7 +76,9 @@ app.use('/b24api', async (req, res) => {
   const qs = extra ? `route=${route}&${extra}` : `route=${route}`;
   const url = `https://office.rocadatech.ru/local/modules/rocada.visits/lib/router.php?${qs}`;
   console.log('[/b24api]', url);
-  await proxyFetch(url, req, res);
+  // Запросы с файлами (фото визита) идут дольше обычных
+  const isUpload = (req.headers['content-type'] || '').startsWith('multipart/form-data');
+  await proxyFetch(url, req, res, isUpload ? 90000 : 25000);
 });
 
 // ── Static files from dist ────────────────────────────────────────────────────
