@@ -19,6 +19,7 @@ use Bitrix\Main\Loader;
 
 const PWA_VISIT_PHOTO_MAX_SIZE      = 20 * 1024 * 1024; // 20 МБ
 const PWA_VISIT_PHOTO_DEFAULT_RANGE = 100;              // метров
+const PWA_VISIT_PHOTO_DEFAULT_TIME_DIFF = 120;          // минут
 const PWA_UNLOAD_POINTS_IBLOCK_ID   = 206;
 
 /**
@@ -61,6 +62,26 @@ function pwaGetUnloadPointCoords(int $pointId): ?array
         return null;
     }
     return ['lat' => (float)$lat, 'lng' => (float)$lng];
+}
+
+/**
+ * Запланированные дата и время визита из поля сделки.
+ * Возвращает ['at' => DateTime, 'has_time' => bool] или null, если дата не указана.
+ * Время 00:00 считаем «время не указано» — визит назначен на день.
+ */
+function pwaVisitPlannedAt($value): ?array
+{
+    $tz = new \DateTimeZone(date_default_timezone_get());
+    if ($value instanceof \Bitrix\Main\Type\DateTime) {
+        $at = (new \DateTime('@' . $value->getTimestamp()))->setTimezone($tz);
+    } elseif ($value instanceof \Bitrix\Main\Type\Date) {
+        $at = new \DateTime($value->format('Y-m-d') . ' 00:00:00', $tz);
+    } elseif (is_string($value) && trim($value) !== '' && ($ts = strtotime($value)) !== false) {
+        $at = (new \DateTime('@' . $ts))->setTimezone($tz);
+    } else {
+        return null;
+    }
+    return ['at' => $at, 'has_time' => $at->format('H:i') !== '00:00'];
 }
 
 /**
@@ -156,8 +177,14 @@ function pwaExifGpsToDecimal($parts, string $ref): ?float
  *   'distance_m' => ?int,
  * ]
  */
-function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int $maxDistance): array
-{
+function pwaCheckVisitPhoto(
+    string $path,
+    array $clientMeta,
+    ?array $point,
+    int $maxDistance,
+    ?array $planned = null,
+    int $maxTimeDiffMin = PWA_VISIT_PHOTO_DEFAULT_TIME_DIFF
+): array {
     $tz     = new \DateTimeZone(date_default_timezone_get());
     $source = ($clientMeta['source'] ?? '') === 'camera' ? 'camera' : 'gallery';
     $exif   = pwaReadPhotoExif($path);
@@ -216,11 +243,25 @@ function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int 
     $reasons  = [];
     $distance = null;
 
-    $today = (new \DateTime('now', $tz))->format('Y-m-d');
+    // Дата и время съёмки сверяются с запланированными датой и временем визита.
+    // Если у визита есть время — допускается отклонение ±$maxTimeDiffMin минут,
+    // если только дата (или отклонение 0) — фото должно быть снято в этот день.
+    // Если дата визита не заполнена — фото должно быть снято сегодня.
     if (!$takenAt) {
         $reasons[] = 'нет даты съёмки';
-    } elseif ($takenAt->format('Y-m-d') !== $today) {
-        $reasons[] = 'фото снято ' . $takenAt->format('d.m.Y') . ', а визит проводится ' . date('d.m.Y');
+    } elseif ($planned && $planned['has_time'] && $maxTimeDiffMin > 0) {
+        $diffMin = (int)round(abs($takenAt->getTimestamp() - $planned['at']->getTimestamp()) / 60);
+        if ($diffMin > $maxTimeDiffMin) {
+            $reasons[] = 'фото снято ' . $takenAt->format('d.m.Y H:i')
+                . ', а визит запланирован на ' . $planned['at']->format('d.m.Y H:i')
+                . ' (разница ' . pwaFormatMinutes($diffMin) . ', допустимо ±' . pwaFormatMinutes($maxTimeDiffMin) . ')';
+        }
+    } else {
+        $visitDay = $planned ? $planned['at'] : new \DateTime('now', $tz);
+        if ($takenAt->format('Y-m-d') !== $visitDay->format('Y-m-d')) {
+            $reasons[] = 'фото снято ' . $takenAt->format('d.m.Y') . ', а визит '
+                . ($planned ? 'запланирован на ' : 'проводится ') . $visitDay->format('d.m.Y');
+        }
     }
 
     // Снимок камерой: дата в метаданных должна совпадать со временем съёмки в приложении.
@@ -265,6 +306,16 @@ function pwaCheckVisitPhoto(string $path, array $clientMeta, ?array $point, int 
         'has_exif'   => $exifDate !== null || $exifGeo !== null,
         'distance_m' => $distance,
     ];
+}
+
+function pwaFormatMinutes(int $min): string
+{
+    if ($min < 60) {
+        return "$min мин";
+    }
+    $h = intdiv($min, 60);
+    $m = $min % 60;
+    return $m ? "$h ч $m мин" : "$h ч";
 }
 
 /**

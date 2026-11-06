@@ -56,6 +56,10 @@ function handleVisitsResult(array $params): void
     if (!empty($photoField)) {
         $select[] = $photoField;
     }
+    $visitDateField = $dirCfg['visit_date_field'] ?? '';
+    if (!empty($visitDateField)) {
+        $select[] = $visitDateField;
+    }
     $deal = DealTable::getList([
         'filter' => ['=ID' => $dealId, '=ASSIGNED_BY_ID' => $userId],
         'select' => $select,
@@ -77,7 +81,9 @@ function handleVisitsResult(array $params): void
         $photo['tmp_name'],
         is_array($photoMeta) ? $photoMeta : [],
         pwaGetUnloadPointCoords((int)($deal['UF_UNLOAD_DOCS'] ?? 0)),
-        $maxRange
+        $maxRange,
+        pwaVisitPlannedAt($visitDateField ? ($deal[$visitDateField] ?? null) : null),
+        max(0, (int)($dirCfg['photo_max_time_diff'] ?? PWA_VISIT_PHOTO_DEFAULT_TIME_DIFF))
     );
 
     $photoRestFile = pwaVisitPhotoRestFile($photo, (int)$dealId);

@@ -175,6 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                     'photo_field'           => $d['photo_field'] ?? '',
                     'photo_wrong_geo_field' => $d['photo_wrong_geo_field'] ?? '',
                     'photo_max_distance'    => max(1, (int)($d['photo_max_distance'] ?? 100) ?: 100),
+                    'photo_max_time_diff'   => max(0, (int)($d['photo_max_time_diff'] ?? 120)),
                     'deal_fields'      => array_values(array_filter($d['deal_fields'] ?? [])),
                     'allowed_users'    => array_values(array_filter(array_map('intval', $d['allowed_users'] ?? []))),
                     'result_statuses'  => $resultStatuses,
@@ -387,7 +388,7 @@ $jsData['ufFileFields'] = array_values(array_filter(
             map_deals_scope: 'all',
             pipelines: [], stages_today: [], stages_tomorrow: [], stages_planned: [], stages_map: [],
             lat_field: '', lng_field: '', comment_field: '', visit_date_field: '', checkin_field: '',
-            photo_wrong_geo_field: '', photo_max_distance: 100, photo_field: '',
+            photo_wrong_geo_field: '', photo_max_distance: 100, photo_max_time_diff: 120, photo_field: '',
             deal_fields: [], allowed_users: [],
             result_statuses: []
         };
@@ -604,6 +605,7 @@ $jsData['ufFileFields'] = array_values(array_filter(
             <tr><td>Поле для фото:<br><small>Файловое поле сделки. Множественное — фото добавляется к уже загруженным</small></td><td>${phHtml}</td></tr>
             <tr><td>Поле «Неверная геолокация»:<br><small>Да/Нет. «Нет» — дата и место фото подтверждены, «Да» — нет</small></td><td>${wgHtml}</td></tr>
             <tr><td>Допустимое расстояние, м:<br><small>От места съёмки до точки визита</small></td><td><input type="number" min="1" step="1" class="dir-photo-dist" value="${escHtml(dir.photo_max_distance||100)}" style="width:120px"></td></tr>
+            <tr><td>Допустимое отклонение по времени, мин:<br><small>От даты и времени визита (поле даты визита) до времени съёмки, в обе стороны. 0 — сверять только дату. Если у визита не указано время — сверяется только дата</small></td><td><input type="number" min="0" step="1" class="dir-photo-time" value="${escHtml(dir.photo_max_time_diff ?? 120)}" style="width:120px"></td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0">
               <b>Статусы завершения</b>
               <span style="font-weight:normal;color:#888;font-size:12px"> — видны сотруднику в PWA. Пустая стадия = не менять.</span>
@@ -657,6 +659,7 @@ $jsData['ufFileFields'] = array_values(array_filter(
             photo_field:           getSingle('#ph_'+id),
             photo_wrong_geo_field: getSingle('#wg_'+id),
             photo_max_distance:    parseInt(getSingle('.dir-photo-dist'), 10) || 100,
+            photo_max_time_diff:   (v => isNaN(v) ? 120 : Math.max(0, v))(parseInt(getSingle('.dir-photo-time'), 10)),
             allowed_users:    getMulti('#usr_'+id).map(Number),
             result_statuses:  resultStatuses,
         };
