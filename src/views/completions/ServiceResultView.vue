@@ -14,6 +14,8 @@
         <div v-else-if="geoError" class="geo-error-block">
           <p class="geo-text geo-err">Не удалось определить местоположение</p>
           <p class="geo-hint">{{ geoError }}</p>
+          <p class="geo-hint">Можно пропустить этот шаг и сохранить визит, но без геолокации в сделке будет отметка «Неверная геолокация».</p>
+          <GeoHelp style="margin-top: 8px" />
         </div>
         <div v-if="geoDone && geoLat" class="geo-success" style="margin-top: 8px;">
           <p class="geo-text geo-ok">Прибытие зафиксировано!</p>
@@ -106,6 +108,8 @@
 
       <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
+      <p v-if="saveHint" class="save-hint">{{ saveHint }}</p>
+
       <button class="primary-btn" :disabled="!photos.length || !entrancePhoto || submitting" @click="submit">
         <span v-if="submitting" class="material-symbols-rounded spin">progress_activity</span>
         <span v-else class="material-symbols-rounded">task_alt</span>
@@ -145,6 +149,7 @@ import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
 import { nextTick } from 'vue'
 import VisitPhotoPicker from '../../components/VisitPhotoPicker.vue'
+import GeoHelp from '../../components/GeoHelp.vue'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
@@ -179,6 +184,14 @@ const photos     = ref([])
 const entrancePhoto = ref(null)
 const submitting = ref(false)
 const errorMsg   = ref('')
+
+// Что ещё нужно, чтобы кнопка завершения стала активной
+const saveHint = computed(() => {
+  const missing = []
+  if (!entrancePhoto.value) missing.push('добавьте фото входной группы')
+  if (!photos.value.length) missing.push('добавьте фото выполненных работ')
+  return missing.length ? 'Чтобы завершить: ' + missing.join(' и ') + '.' : ''
+})
 
 onMounted(async () => {
   const dir = currentDirection.value
@@ -368,6 +381,7 @@ async function submit() {
 
 .primary-btn { width: 100%; height: 52px; border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--color-accent), var(--color-primary)); color: white; font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); border: none; cursor: pointer; text-decoration: none; transition: opacity var(--transition-fast); }
 .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.save-hint { font-size: var(--font-size-sm); color: var(--color-danger); text-align: center; }
 .secondary-btn { width: 100%; height: 48px; border-radius: var(--radius-lg); background: var(--color-bg-card); color: var(--color-text-primary); font-size: var(--font-size-base); font-weight: var(--font-weight-semibold); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); border: 1px solid var(--color-border); text-decoration: none; }
 
 .step-title { font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }

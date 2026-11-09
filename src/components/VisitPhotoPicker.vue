@@ -49,6 +49,7 @@
         </span>
         <span v-else>Место съёмки не определено{{ geoError ? ': ' + geoError : '' }}</span>
       </div>
+      <GeoHelp v-if="!hasGeo && canRetryGeo" />
       <button
         v-if="!hasGeo && canRetryGeo"
         class="vp-retry"
@@ -59,20 +60,38 @@
         <span class="material-symbols-rounded" :class="{ spin: locating }">{{ locating ? 'progress_activity' : 'my_location' }}</span>
         {{ locating ? 'Определяем местоположение…' : 'Определить местоположение ещё раз' }}
       </button>
+      <p v-if="!hasGeo && !canRetryGeo" class="vp-warn">
+        Чтобы определить место съёмки, удалите фото крестиком и нажмите «Сделать фото».
+      </p>
       <p v-if="!modelValue.meta.taken_at || !hasGeo" class="vp-warn">
-        Без даты и места съёмки визит будет отмечен как «Неверная геолокация».
+        Визит можно сохранить и так, но в сделке будет отметка «Неверная геолокация».
       </p>
     </div>
 
-    <p v-else class="vp-note">
-      Фото из галереи без даты и геолокации съёмки отмечаются как «Неверная геолокация».
-      Надёжнее снимать через «Сделать фото».
-    </p>
+    <template v-else>
+      <!-- Доступа к геолокации нет — объясняем это до съёмки, а не после -->
+      <div v-if="geoDenied" class="vp-meta">
+        <div class="vp-meta-row bad">
+          <span class="material-symbols-rounded">location_off</span>
+          <span>Нет доступа к геолокации, место съёмки не определится</span>
+        </div>
+        <GeoHelp />
+        <button class="vp-retry" type="button" :disabled="locating" @click="checkGeo">
+          <span class="material-symbols-rounded" :class="{ spin: locating }">{{ locating ? 'progress_activity' : 'my_location' }}</span>
+          {{ locating ? 'Определяем местоположение…' : 'Проверить геолокацию ещё раз' }}
+        </button>
+      </div>
+      <p class="vp-note">
+        Фото без даты и места съёмки не мешает сохранить визит, но в сделке будет отметка «Неверная геолокация».
+        Надёжнее снимать через «Сделать фото».
+      </p>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import GeoHelp from './GeoHelp.vue'
 
 const props = defineProps({
   // { file, preview, meta: { source, taken_at, lat, lng, accuracy, geo_source, exif_* } } | null
@@ -96,6 +115,8 @@ const hasGeo = computed(() => {
   const m = props.modelValue?.meta
   return m && Number.isFinite(m.lat) && Number.isFinite(m.lng)
 })
+
+const geoDenied = computed(() => geoError.value.startsWith('нет доступа'))
 
 // Повторно запросить геолокацию можно только для свежего снимка камерой
 const canRetryGeo = computed(() => {
@@ -271,6 +292,17 @@ async function compressPhoto(file) {
     return new File([blob], name, { type: 'image/jpeg', lastModified: file.lastModified })
   } catch {
     return file
+  }
+}
+
+// Проверка после того, как сотрудник включил геолокацию в настройках
+async function checkGeo() {
+  if (locating.value) return
+  locating.value = true
+  try {
+    await getPosition({ enableHighAccuracy: false, timeout: 15000, maximumAge: 0 })
+  } finally {
+    locating.value = false
   }
 }
 
