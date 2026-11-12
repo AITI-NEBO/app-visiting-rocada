@@ -37,6 +37,10 @@ function handleDirections(array $params): void
             'icon'            => $d['icon'] ?? 'briefcase',
             'completion_type' => $d['completion_type'] ?? 'sales',
             'result_statuses' => $statuses,
+            // Фото входной группы: обязательность и разрешённые способы добавления
+            'photo_required'      => ($d['photo_required'] ?? true) !== false,
+            'photo_allow_camera'  => ($d['photo_allow_camera'] ?? true) !== false,
+            'photo_allow_gallery' => ($d['photo_allow_gallery'] ?? true) !== false,
         ];
     }, $visible));
 }
