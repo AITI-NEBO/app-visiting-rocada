@@ -8,9 +8,15 @@
  *   status_id   — ID статуса из result_statuses направления
  *   comment     — комментарий
  *   direction   — ID направления
- *   distance_m  — расстояние в метрах от точки (опционально)
- *   photo       — фото входной группы клиники (обязательно)
- *   photo_meta  — JSON: { source: camera|gallery, taken_at: ISO 8601, lat, lng }
+ *   lat, lng    — местоположение телефона в момент сохранения итога
+ *   accuracy    — точность местоположения, м
+ *   geo_error   — почему местоположение не получено (если lat/lng пустые)
+ *   photo       — фото входной группы клиники (обязательность — в настройках направления)
+ *   photo_meta  — JSON: { source: camera|gallery, picked: camera|gallery, taken_at: ISO 8601, lat, lng, ... }
+ *
+ * Поля сделки:
+ *   lat_field / lng_field / checkin_field — местоположение и время сохранения итога;
+ *   photo_lat_field / photo_lng_field / photo_date_field — место и время съёмки фото.
  */
 
 use Bitrix\Crm\DealTable;
@@ -36,9 +42,17 @@ function handleVisitsResult(array $params): void
     $comment    = trim($body['comment']     ?? '');
     $forceStage = trim($body['new_stage_id'] ?? '');
     $dirId      = trim($body['direction'] ?? ($params['get']['direction'] ?? ''));
-    $distanceM  = isset($body['distance_m']) && is_numeric($body['distance_m'])
-        ? (int)round((float)$body['distance_m'])
-        : null;
+
+    // Местоположение в момент сохранения итога
+    $saveLat = is_numeric($body['lat'] ?? null) ? (float)$body['lat'] : null;
+    $saveLng = is_numeric($body['lng'] ?? null) ? (float)$body['lng'] : null;
+    if ($saveLat === null || $saveLng === null || abs($saveLat) > 90 || abs($saveLng) > 180
+        || ($saveLat == 0 && $saveLng == 0)) {
+        $saveLat = $saveLng = null;
+    }
+    $saveAccuracy = is_numeric($body['accuracy'] ?? null) ? (int)round((float)$body['accuracy']) : null;
+    $saveGeoError = mb_substr(trim((string)($body['geo_error'] ?? '')), 0, 150);
+    $savedAt      = new \DateTime('now');
 
     if (empty($statusId) && empty($forceStage)) {
         pwaSendError('status_id или new_stage_id обязательны', 422);
@@ -47,12 +61,9 @@ function handleVisitsResult(array $params): void
     $dirCfg       = getDirectionConfig($dirId, $mid);
     $checkinField = $dirCfg['checkin_field'] ?? '';
 
-    // Проверяем доступ к сделке (+ читаем поле чекина, если настроено)
+    // Проверяем доступ к сделке
     $photoField = $dirCfg['photo_field'] ?? '';
     $select = ['ID', 'TITLE', 'UF_UNLOAD_DOCS'];
-    if (!empty($checkinField)) {
-        $select[] = $checkinField;
-    }
     if (!empty($photoField)) {
         $select[] = $photoField;
     }
@@ -69,30 +80,49 @@ function handleVisitsResult(array $params): void
         pwaSendError('Визит не найден или нет доступа', 404);
     }
 
-    // Фото входной группы обязательно — без него визит не завершается
-    $photo = $params['files']['photo'] ?? null;
-    if ($photoError = pwaValidateVisitPhoto($photo)) {
-        pwaSendError($photoError, 422);
-    }
-
+    // Фото входной группы: обязательность и разрешённые способы — в настройках направления
+    $photoRequired = ($dirCfg['photo_required'] ?? true) !== false;
+    $photo     = $params['files']['photo'] ?? null;
+    $hasPhoto  = !empty($photo) && ($photo['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
     $photoMeta = json_decode((string)($body['photo_meta'] ?? ''), true);
-    $maxRange  = (int)($dirCfg['photo_max_distance'] ?? 0) ?: PWA_VISIT_PHOTO_DEFAULT_RANGE;
-    $photoCheck = pwaCheckVisitPhoto(
-        $photo['tmp_name'],
-        is_array($photoMeta) ? $photoMeta : [],
-        pwaGetUnloadPointCoords((int)($deal['UF_UNLOAD_DOCS'] ?? 0)),
-        $maxRange,
-        pwaVisitPlannedAt($visitDateField ? ($deal[$visitDateField] ?? null) : null),
-        max(0, (int)($dirCfg['photo_max_time_diff'] ?? PWA_VISIT_PHOTO_DEFAULT_TIME_DIFF))
-    );
+    $photoMeta = is_array($photoMeta) ? $photoMeta : [];
 
-    $photoRestFile = pwaVisitPhotoRestFile($photo, (int)$dealId);
-
-    // Подстраховка: если гео было пропущено и чекин ещё не зафиксирован —
-    // фиксируем дату/время чекина в момент сохранения результата
-    if (!empty($checkinField) && empty($deal[$checkinField])) {
-        DealTable::update($dealId, [$checkinField => date('d.m.Y H:i:s')]);
+    if ($photoRequired || $hasPhoto) {
+        if ($photoError = pwaValidateVisitPhoto($photo)) {
+            pwaSendError($photoError, 422);
+        }
     }
+    if ($hasPhoto) {
+        $picked = ($photoMeta['picked'] ?? '') === 'camera' ? 'camera' : 'gallery';
+        if ($picked === 'gallery' && ($dirCfg['photo_allow_gallery'] ?? true) === false) {
+            pwaSendError('Загрузка фото из галереи отключена. Сделайте фото камерой', 422);
+        }
+        if ($picked === 'camera' && ($dirCfg['photo_allow_camera'] ?? true) === false) {
+            pwaSendError('Съёмка камерой отключена. Выберите фото из галереи', 422);
+        }
+    }
+
+    $point    = pwaGetUnloadPointCoords((int)($deal['UF_UNLOAD_DOCS'] ?? 0));
+    $maxRange = (int)($dirCfg['photo_max_distance'] ?? 0) ?: PWA_VISIT_PHOTO_DEFAULT_RANGE;
+
+    $photoCheck    = null;
+    $photoRestFile = null;
+    if ($hasPhoto) {
+        $photoCheck = pwaCheckVisitPhoto(
+            $photo['tmp_name'],
+            $photoMeta,
+            $point,
+            $maxRange,
+            pwaVisitPlannedAt($visitDateField ? ($deal[$visitDateField] ?? null) : null),
+            max(0, (int)($dirCfg['photo_max_time_diff'] ?? PWA_VISIT_PHOTO_DEFAULT_TIME_DIFF))
+        );
+        $photoRestFile = pwaVisitPhotoRestFile($photo, (int)$dealId);
+    }
+
+    // Расстояние от места сохранения итога до точки визита
+    $distanceM = ($saveLat !== null && $point)
+        ? pwaDistanceMeters($saveLat, $saveLng, $point['lat'], $point['lng'])
+        : null;
 
     // Определяем целевой статус и стадию из конфига направления
     $targetStage = $forceStage;
@@ -146,14 +176,43 @@ function handleVisitsResult(array $params): void
     if (!empty($deviceField)) {
         $updateFields[$deviceField] = 1;
     }
-    // «Неверная геолокация» (Да/Нет): Нет — дата и место фото подтверждены, Да — нет
+    // «Неверная геолокация» (Да/Нет): Нет — дата и место фото подтверждены,
+    // Да — не подтверждены или фото не приложено
     $wrongGeoField = $dirCfg['photo_wrong_geo_field'] ?? '';
     if (!empty($wrongGeoField)) {
-        $updateFields[$wrongGeoField] = $photoCheck['ok'] ? 0 : 1;
+        $updateFields[$wrongGeoField] = ($photoCheck && $photoCheck['ok']) ? 0 : 1;
     }
-    // Фото входной группы — в файловое поле сделки
-    if (!empty($photoField)) {
-        $updateFields[$photoField] = pwaDealFileFieldValue($photoField, $photoRestFile, (array)($deal[$photoField] ?? []));
+
+    // Местоположение и время сохранения итога — в поля широты, долготы и чекина
+    if ($saveLat !== null) {
+        if (!empty($dirCfg['lat_field'])) {
+            $updateFields[$dirCfg['lat_field']] = pwaDealCoordValue($dirCfg['lat_field'], $saveLat);
+        }
+        if (!empty($dirCfg['lng_field'])) {
+            $updateFields[$dirCfg['lng_field']] = pwaDealCoordValue($dirCfg['lng_field'], $saveLng);
+        }
+    }
+    if (!empty($checkinField)) {
+        $updateFields[$checkinField] = pwaDealDateValue($checkinField, $savedAt);
+    }
+
+    if ($photoCheck) {
+        // Фото входной группы — в файловое поле сделки
+        if (!empty($photoField)) {
+            $updateFields[$photoField] = pwaDealFileFieldValue($photoField, $photoRestFile, (array)($deal[$photoField] ?? []));
+        }
+        // Место и время съёмки фото — в отдельные поля
+        if ($photoCheck['lat'] !== null) {
+            if (!empty($dirCfg['photo_lat_field'])) {
+                $updateFields[$dirCfg['photo_lat_field']] = pwaDealCoordValue($dirCfg['photo_lat_field'], $photoCheck['lat']);
+            }
+            if (!empty($dirCfg['photo_lng_field'])) {
+                $updateFields[$dirCfg['photo_lng_field']] = pwaDealCoordValue($dirCfg['photo_lng_field'], $photoCheck['lng']);
+            }
+        }
+        if ($photoCheck['taken_at'] && !empty($dirCfg['photo_date_field'])) {
+            $updateFields[$dirCfg['photo_date_field']] = pwaDealDateValue($dirCfg['photo_date_field'], $photoCheck['taken_at']);
+        }
     }
     if (!empty($targetStage)) {
         $updateFields['STAGE_ID'] = $targetStage;
@@ -175,13 +234,20 @@ function handleVisitsResult(array $params): void
         $tlText .= "\n\n$comment";
     }
 
-    // Дистанция от точки (если передана)
-    if ($distanceM !== null && $distanceM >= 0) {
-        $tlText .= "\n\n📍 Отметился в {$distanceM} м от точки визита";
+    // Местоположение в момент сохранения итога
+    $accText = $saveAccuracy ? " (точность ±{$saveAccuracy} м)" : '';
+    if ($saveLat === null) {
+        $tlText .= "\n\n📍 Местоположение при сохранении не получено" . ($saveGeoError !== '' ? ": $saveGeoError" : '');
+    } elseif ($distanceM !== null) {
+        $tlText .= "\n\n📍 Сохранено в {$distanceM} м от точки визита{$accText}";
+    } else {
+        $tlText .= "\n\n📍 Местоположение при сохранении получено{$accText}, но у точки визита не заполнены координаты";
     }
 
     // Фото входной группы: результат проверки
-    $tlText .= "\n\n" . pwaVisitPhotoCheckText($photoCheck);
+    $tlText .= "\n\n" . ($photoCheck
+        ? pwaVisitPhotoCheckText($photoCheck)
+        : "📷 Фото входной группы не приложено\n⚠️ Неверная геолокация: нет фото");
 
     // Сделка уже обновлена — сразу отвечаем приложению, а комментарий с фото
     // добавляем после ответа: загрузка файла в таймлайн небыстрая,
@@ -191,25 +257,26 @@ function handleVisitsResult(array $params): void
         'status_id'   => $statusId,
         'status_name' => $statusLabel,
         'new_stage'   => $targetStage ?: null,
-        'photo_ok'    => $photoCheck['ok'],
+        'photo_ok'    => (bool)($photoCheck['ok'] ?? false),
         'message'     => 'Результат сохранён',
     ]);
 
     // Комментарий с фото во вложении — через REST от имени пользователя,
     // так фото показывается в таймлайне превью, а не ссылкой
+    $tlFields = [
+        'ENTITY_ID'   => (int)$dealId,
+        'ENTITY_TYPE' => 'deal',
+        'COMMENT'     => $tlText,
+    ];
+    if ($photoRestFile) {
+        $tlFields['FILES'] = [$photoRestFile];
+    }
     try {
-        pwaCallRestAsUser('crm.timeline.comment.add', [
-            'fields' => [
-                'ENTITY_ID'   => (int)$dealId,
-                'ENTITY_TYPE' => 'deal',
-                'COMMENT'     => $tlText,
-                'FILES'       => [$photoRestFile],
-            ],
-        ]);
+        pwaCallRestAsUser('crm.timeline.comment.add', ['fields' => $tlFields]);
     } catch (\RuntimeException $e) {
         // Визит уже завершён — не роняем ответ, пишем комментарий без вложения
         CommentEntry::create([
-            'TEXT'      => $tlText . (!empty($photoField) ? "\n\nФото сохранено в карточке сделки." : ''),
+            'TEXT'      => $tlText . ($photoRestFile && !empty($photoField) ? "\n\nФото сохранено в карточке сделки." : ''),
             'BINDINGS'  => [['ENTITY_TYPE_ID' => \CCrmOwnerType::Deal, 'ENTITY_ID' => $dealId]],
             'AUTHOR_ID' => $userId,
         ]);

@@ -3,7 +3,8 @@
     <h4 class="vp-title">
       <span class="material-symbols-rounded" style="font-size:18px">storefront</span>
       Фото входной группы клиники
-      <span class="vp-required">*обязательно</span>
+      <span v-if="required" class="vp-required">*обязательно</span>
+      <span v-else class="vp-optional">(необязательно)</span>
     </h4>
     <p class="vp-hint">Название клиники на фото должно читаться.</p>
 
@@ -19,13 +20,13 @@
       Определяем дату и место съёмки…
     </div>
 
-    <div v-else class="vp-buttons">
-      <label class="vp-btn vp-btn-main" @click="warmUpGeo">
+    <div v-else class="vp-buttons" :class="{ 'vp-buttons-single': !(allowCamera && allowGallery) }">
+      <label v-if="allowCamera" class="vp-btn vp-btn-main" @click="warmUpGeo">
         <span class="material-symbols-rounded">photo_camera</span>
         Сделать фото
         <input type="file" accept="image/*" capture="environment" hidden @change="e => onPick(e, 'camera')" />
       </label>
-      <label class="vp-btn">
+      <label v-if="allowGallery" class="vp-btn" :class="{ 'vp-btn-main': !allowCamera }">
         <span class="material-symbols-rounded">photo_library</span>
         Из галереи
         <input type="file" accept="image/*" hidden @change="e => onPick(e, 'gallery')" />
@@ -45,7 +46,6 @@
           Место съёмки определено
           <template v-if="modelValue.meta.geo_source === 'exif'">по метаданным фото</template>
           <template v-else-if="modelValue.meta.geo_source === 'device'">по телефону<template v-if="modelValue.meta.accuracy"> (±{{ Math.round(modelValue.meta.accuracy) }} м)</template></template>
-          <template v-else-if="modelValue.meta.geo_source === 'checkin'">по отметке на шаге геолокации</template>
         </span>
         <span v-else>Место съёмки не определено{{ geoError ? ': ' + geoError : '' }}</span>
       </div>
@@ -60,7 +60,7 @@
         <span class="material-symbols-rounded" :class="{ spin: locating }">{{ locating ? 'progress_activity' : 'my_location' }}</span>
         {{ locating ? 'Определяем местоположение…' : 'Определить местоположение ещё раз' }}
       </button>
-      <p v-if="!hasGeo && !canRetryGeo" class="vp-warn">
+      <p v-if="!hasGeo && !canRetryGeo && allowCamera" class="vp-warn">
         Чтобы определить место съёмки, удалите фото крестиком и нажмите «Сделать фото».
       </p>
       <p v-if="!modelValue.meta.taken_at || !hasGeo" class="vp-warn">
@@ -82,8 +82,9 @@
         </button>
       </div>
       <p class="vp-note">
-        Фото без даты и места съёмки не мешает сохранить визит, но в сделке будет отметка «Неверная геолокация».
-        Надёжнее снимать через «Сделать фото».
+        <template v-if="required">Фото без даты и места съёмки не мешает сохранить визит, но в сделке будет отметка «Неверная геолокация».</template>
+        <template v-else>Без фото, а также с фото без даты и места съёмки, в сделке будет отметка «Неверная геолокация».</template>
+        <template v-if="allowCamera && allowGallery"> Надёжнее снимать через «Сделать фото».</template>
       </p>
     </template>
   </div>
@@ -94,11 +95,12 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import GeoHelp from './GeoHelp.vue'
 
 const props = defineProps({
-  // { file, preview, meta: { source, taken_at, lat, lng, accuracy, geo_source, exif_* } } | null
+  // { file, preview, meta: { source, picked, taken_at, lat, lng, accuracy, geo_source, exif_* } } | null
   modelValue: { type: Object, default: null },
-  // Координаты с шага геолокации — запасной вариант, если телефон не отдаст их повторно
-  fallbackLat: { type: [String, Number], default: '' },
-  fallbackLng: { type: [String, Number], default: '' },
+  // Настройки направления: обязательность фото и разрешённые способы добавления
+  required:     { type: Boolean, default: true },
+  allowCamera:  { type: Boolean, default: true },
+  allowGallery: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -224,6 +226,8 @@ async function onPick(e, picked) {
 
     const meta = {
       source,
+      // Какой кнопкой добавлено фото — сервер проверит, что способ разрешён в настройках
+      picked,
       taken_at: exif.takenAt ? exif.takenAt.toISOString() : null,
       lat: exif.lat ?? null,
       lng: exif.lng ?? null,
@@ -248,13 +252,8 @@ async function onPick(e, picked) {
         meta.device_lng = pos.lng
         meta.accuracy   = pos.accuracy
       }
-      if (meta.lat === null) {
-        if (pos) {
-          meta.lat = pos.lat; meta.lng = pos.lng; meta.geo_source = 'device'
-        } else if (props.fallbackLat && props.fallbackLng) {
-          meta.lat = parseFloat(props.fallbackLat); meta.lng = parseFloat(props.fallbackLng)
-          meta.geo_source = 'checkin'
-        }
+      if (meta.lat === null && pos) {
+        meta.lat = pos.lat; meta.lng = pos.lng; meta.geo_source = 'device'
       }
     }
 
@@ -353,6 +352,8 @@ onBeforeUnmount(() => {
 .vp-required { color: var(--color-danger); font-size: 12px; margin-left: 4px; font-weight: normal; }
 .vp-hint, .vp-note { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
 .vp-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); }
+.vp-buttons-single { grid-template-columns: 1fr; }
+.vp-optional { color: var(--color-text-tertiary); font-size: 12px; margin-left: 4px; font-weight: normal; }
 .vp-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 96px; border-radius: var(--radius-md); border: 2px dashed var(--color-border); cursor: pointer; color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); text-align: center; padding: var(--space-sm); }
 .vp-btn .material-symbols-rounded { font-size: 28px; }
 .vp-btn-main { border-color: var(--color-primary); color: var(--color-primary); }

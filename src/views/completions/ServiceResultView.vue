@@ -1,45 +1,7 @@
 <template>
   <div class="service-result">
-    <!-- Step 1: Geo -->
-    <div v-if="step === 1" class="step-content animate-fade-in-up">
-      <div class="geo-visual">
-        <div style="position: relative; width: 100%;">
-          <div class="geo-map-container" ref="mapEl" :class="{ loading: isLocating }"></div>
-          <div v-if="isLocating" class="map-overlay" style="border-radius: var(--radius-lg);">
-             <span class="material-symbols-rounded spin overlay-icon">my_location</span>
-          </div>
-        </div>
-        <p class="geo-text" v-if="!geoDone && !isLocating && !geoError">Зафиксируйте прибытие на точку обслуживания</p>
-        <p class="geo-text" v-else-if="isLocating">Определение местоположения…</p>
-        <div v-else-if="geoError" class="geo-error-block">
-          <p class="geo-text geo-err">Не удалось определить местоположение</p>
-          <p class="geo-hint">{{ geoError }}</p>
-          <p class="geo-hint">Можно пропустить этот шаг и сохранить визит, но без геолокации в сделке будет отметка «Неверная геолокация».</p>
-          <GeoHelp style="margin-top: 8px" />
-        </div>
-        <div v-if="geoDone && geoLat" class="geo-success" style="margin-top: 8px;">
-          <p class="geo-text geo-ok">Прибытие зафиксировано!</p>
-          <span class="geo-coords">{{ geoLat }}, {{ geoLng }}</span>
-        </div>
-      </div>
-
-      <template v-if="!geoDone && !geoError">
-        <button class="primary-btn" :disabled="isLocating" @click="confirmGeo">
-          <span class="material-symbols-rounded">{{ isLocating ? 'hourglass_top' : 'location_on' }}</span>
-          {{ isLocating ? 'Определение…' : 'Зафиксировать прибытие' }}
-        </button>
-        <button class="secondary-btn" @click="skipGeo" style="margin-top:var(--space-sm)">Пропустить</button>
-      </template>
-      <template v-else-if="geoError">
-        <button class="primary-btn" @click="confirmGeo">
-          <span class="material-symbols-rounded">refresh</span> Повторить
-        </button>
-        <button class="secondary-btn" @click="skipGeo" style="margin-top:var(--space-sm)">Пропустить и продолжить</button>
-      </template>
-      <button v-else class="primary-btn" @click="step = 2">
-        <span class="material-symbols-rounded">arrow_forward</span> Далее
-      </button>
-    </div>
+    <!-- Step 1: проверка доступа к геолокации -->
+    <GeoAccessStep v-if="step === 1" @ready="step = 2" />
 
     <!-- Step 2: Work result -->
     <div v-if="step === 2" class="step-content animate-fade-in-up">
@@ -62,8 +24,13 @@
         </button>
       </div>
 
-      <!-- Фото входной группы (обязательно) -->
-      <VisitPhotoPicker v-model="entrancePhoto" :fallback-lat="geoLat" :fallback-lng="geoLng" />
+      <!-- Фото входной группы (обязательность и способы — в настройках направления) -->
+      <VisitPhotoPicker
+        v-model="entrancePhoto"
+        :required="photoRequired"
+        :allow-camera="allowCamera"
+        :allow-gallery="allowGallery"
+      />
 
       <!-- Фото (обязательно для сервиса) -->
       <div class="photo-section">
@@ -110,10 +77,10 @@
 
       <p v-if="saveHint" class="save-hint">{{ saveHint }}</p>
 
-      <button class="primary-btn" :disabled="!photos.length || !entrancePhoto || submitting" @click="submit">
+      <button class="primary-btn" :disabled="!canSave || submitting" @click="submit">
         <span v-if="submitting" class="material-symbols-rounded spin">progress_activity</span>
         <span v-else class="material-symbols-rounded">task_alt</span>
-        {{ submitting ? 'Сохранение…' : 'Завершить работу' }}
+        {{ savingStage === 'geo' ? 'Определяем местоположение…' : submitting ? 'Сохранение…' : 'Завершить работу' }}
       </button>
     </div>
 
@@ -143,39 +110,22 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useApi } from '../../composables/useApi'
 import { useDirections } from '../../composables/useDirections'
 import { useVisits } from '../../composables/useVisits'
-import { nextTick } from 'vue'
+import { getSaveLocation } from '../../composables/useGeolocation'
 import VisitPhotoPicker from '../../components/VisitPhotoPicker.vue'
-import GeoHelp from '../../components/GeoHelp.vue'
+import GeoAccessStep from '../../components/GeoAccessStep.vue'
 
 const props = defineProps({ visitId: { type: [String, Number], required: true } })
 
-const route = useRoute()
 const router = useRouter()
 const api  = useApi()
 const { currentDirection } = useDirections()
-const { findVisit, loadVisits, submitResult } = useVisits()
-const mapEl = ref(null)
-
-// Расчёт расстояния по формуле Haversine (возвращает метры)
-function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000
-  const toRad = d => d * Math.PI / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLon = toRad(lon2 - lon1)
-  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2
-  return Math.round(R * 2 * Math.asin(Math.sqrt(a)))
-}
+const { loadVisits, submitResult } = useVisits()
 
 const step       = ref(1)
-const isLocating = ref(false)
-const geoDone    = ref(false)
-const geoLat     = ref('')
-const geoLng     = ref('')
-const geoError   = ref('')
 
 const statuses   = ref([])
 const selectedId = ref(null)
@@ -183,12 +133,20 @@ const comment    = ref('')
 const photos     = ref([])
 const entrancePhoto = ref(null)
 const submitting = ref(false)
+const savingStage = ref('') // 'geo' | 'save'
 const errorMsg   = ref('')
+
+// Настройки фото из направления (по умолчанию: обязательно, камера и галерея)
+const photoRequired = computed(() => currentDirection.value?.photo_required !== false)
+const allowCamera   = computed(() => currentDirection.value?.photo_allow_camera !== false)
+const allowGallery  = computed(() => currentDirection.value?.photo_allow_gallery !== false)
+
+const canSave = computed(() => !!photos.value.length && (!photoRequired.value || !!entrancePhoto.value))
 
 // Что ещё нужно, чтобы кнопка завершения стала активной
 const saveHint = computed(() => {
   const missing = []
-  if (!entrancePhoto.value) missing.push('добавьте фото входной группы')
+  if (photoRequired.value && !entrancePhoto.value) missing.push('добавьте фото входной группы')
   if (!photos.value.length) missing.push('добавьте фото выполненных работ')
   return missing.length ? 'Чтобы завершить: ' + missing.join(' и ') + '.' : ''
 })
@@ -197,19 +155,7 @@ onMounted(async () => {
   const dir = currentDirection.value
   const rs  = dir?.result_statuses || []
   statuses.value = rs.filter(s => s.name)
-  
-  setTimeout(() => {
-    let center = [55.795, 49.1221]
-    const visit = findVisit(props.visitId)
-    if (visit && (visit.lat || visit.geoLat)) {
-       center = [visit.lat || visit.geoLat, visit.lng || visit.geoLng]
-    }
-    initMap(center[0], center[1], !!visit)
-  }, 100)
 })
-
-let mapInstance = null
-let myPlacemark = null
 
 // Поля фото для выбранного статуса
 const selectedStatusPhotoFields = computed(() => {
@@ -217,86 +163,6 @@ const selectedStatusPhotoFields = computed(() => {
   const st = statuses.value.find(s => s.id === selectedId.value)
   return (st?.photo_fields || []).map(code => ({ code, label: code }))
 })
-
-function confirmGeo() {
-  isLocating.value = true
-  geoError.value   = ''
-  if (!navigator.geolocation) {
-    isLocating.value = false
-    geoError.value   = 'Геолокация не поддерживается браузером'
-    return
-  }
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      geoLat.value = pos.coords.latitude.toFixed(6)
-      geoLng.value = pos.coords.longitude.toFixed(6)
-      isLocating.value = false
-      geoDone.value    = true
-      geoError.value   = ''
-
-      if (mapInstance && window.ymaps) {
-         if (myPlacemark) { mapInstance.geoObjects.remove(myPlacemark) }
-         myPlacemark = new window.ymaps.Placemark([pos.coords.latitude, pos.coords.longitude], { hintContent: 'Вы здесь' }, { preset: 'islands#redDotIcon' })
-         mapInstance.geoObjects.add(myPlacemark)
-         
-         const bounds = mapInstance.geoObjects.getBounds()
-         if (bounds) {
-             mapInstance.setBounds(bounds, { checkZoomRange: true, zoomMargin: 20 })
-         } else {
-             mapInstance.setCenter([pos.coords.latitude, pos.coords.longitude])
-         }
-      } else {
-         initMap(pos.coords.latitude, pos.coords.longitude, true)
-      }
-    },
-    (err) => {
-      isLocating.value = false
-      geoError.value   = err.code === 1
-        ? 'Нет разрешения на доступ к местоположению.'
-        : err.code === 2
-        ? 'Местоположение недоступно. Проверьте GPS или сеть.'
-        : 'Превышено время ожидания. Попробуйте ещё раз.'
-    },
-    { timeout: 15000, enableHighAccuracy: false, maximumAge: 30000 }
-  )
-}
-
-async function initMap(lat, lng, hasVisitPoint = true) {
-  await new Promise(resolve => {
-    if (window.ymaps) { resolve(); return }
-    const script = document.createElement('script')
-    script.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU'
-    script.onload = resolve
-    document.head.appendChild(script)
-  })
-
-  window.ymaps.ready(() => {
-    if (!mapEl.value) return
-    mapEl.value.innerHTML = ''
-    mapInstance = new window.ymaps.Map(mapEl.value, {
-      center: [lat, lng],
-      zoom: 16,
-      controls: ['zoomControl']
-    }, { suppressMapOpenBlock: true })
-    
-    if (hasVisitPoint && lat && lng) {
-      const placemark = new window.ymaps.Placemark([lat, lng], { hintContent: 'Точка визита' }, { preset: 'islands#blueDotIcon' })
-      mapInstance.geoObjects.add(placemark)
-    } else {
-      window.ymaps.geolocation.get({ provider: 'yandex', autoReverseGeocode: false })
-        .then((result) => {
-          const coords = result.geoObjects.get(0).geometry.getCoordinates()
-          mapInstance.setCenter(coords, 14)
-        }).catch(() => {})
-    }
-  })
-}
-
-function skipGeo() {
-  isLocating.value = false
-  geoDone.value    = true
-  step.value       = 2
-}
 
 function handlePhoto(e, field) {
   const file = e.target.files[0]
@@ -308,12 +174,10 @@ function handlePhoto(e, field) {
 }
 
 async function submit() {
-  if (!photos.value.length || !entrancePhoto.value) return
+  if (!canSave.value) return
   submitting.value = true; errorMsg.value = ''
   try {
-    if (geoDone.value && geoLat.value) {
-      await api.apiPost(`api/visits/${props.visitId}/geo`, { lat: geoLat.value, lng: geoLng.value, direction: currentDirection.value?.id })
-    }
+    savingStage.value = 'save'
     for (const p of photos.value) {
       const fd = new FormData()
       fd.append('files[]', p.file)
@@ -322,22 +186,18 @@ async function submit() {
       fd.append('direction', currentDirection.value?.id || '')
       await api.apiPostForm(`api/visits/${props.visitId}/files`, fd)
     }
-    // Рассчитываем расстояние от точки визита (если у визита есть координаты)
-    let distanceM = undefined
-    if (geoDone.value && geoLat.value) {
-      const visit = findVisit(props.visitId)
-      if (visit && visit.lat != null && visit.lng != null) {
-        distanceM = haversineDistance(
-          parseFloat(geoLat.value), parseFloat(geoLng.value),
-          visit.lat, visit.lng
-        )
-      }
-    }
+    // Местоположение и время — в момент завершения визита
+    savingStage.value = 'geo'
+    const loc = await getSaveLocation()
+    savingStage.value = 'save'
     await submitResult(props.visitId, {
       status_id:  selectedId.value || null,
       comment:    comment.value,
       direction:  currentDirection.value?.id,
-      distance_m: distanceM,
+      lat:        loc.ok ? loc.lat : null,
+      lng:        loc.ok ? loc.lng : null,
+      accuracy:   loc.ok ? Math.round(loc.accuracy) : null,
+      geo_error:  loc.ok ? null : loc.error,
     }, entrancePhoto.value)
     // Обновляем список визитов в фоне (без ожидания)
     loadVisits(true).catch(() => {})
@@ -360,25 +220,13 @@ async function submit() {
     errorMsg.value = e.message || 'Ошибка при сохранении'
   } finally {
     submitting.value = false
+    savingStage.value = ''
   }
 }
 </script>
 
 <style scoped>
 .step-content { display: flex; flex-direction: column; gap: var(--space-lg); }
-.geo-visual { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); padding: var(--space-xl) 0; width: 100%; }
-.geo-map-container { position: relative; width: 100%; height: 260px; border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); border: 2px solid transparent; transition: border-color var(--transition-fast); }
-.geo-map-container.loading { border-color: var(--color-primary); }
-.map-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(2px); }
-.overlay-icon { font-size: 40px; color: var(--color-primary); }
-.geo-text { font-size: var(--font-size-sm); color: var(--color-text-secondary); text-align: center; max-width: 280px; }
-.geo-ok { color: var(--color-success); font-weight: var(--font-weight-semibold); }
-.geo-err { color: var(--color-danger); font-weight: var(--font-weight-semibold); }
-.geo-hint { font-size: var(--font-size-xs); color: var(--color-text-tertiary); text-align: center; max-width: 280px; margin-top: 4px; }
-.geo-error-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.geo-success { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.geo-coords { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
-
 .primary-btn { width: 100%; height: 52px; border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--color-accent), var(--color-primary)); color: white; font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); display: flex; align-items: center; justify-content: center; gap: var(--space-sm); border: none; cursor: pointer; text-decoration: none; transition: opacity var(--transition-fast); }
 .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .save-hint { font-size: var(--font-size-sm); color: var(--color-danger); text-align: center; }

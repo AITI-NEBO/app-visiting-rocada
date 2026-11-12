@@ -162,8 +162,11 @@ export function useVisits() {
         for (const [key, val] of Object.entries(resultData)) {
             if (val !== undefined && val !== null) fd.append(key, val)
         }
-        fd.append('photo', photo.file)
-        fd.append('photo_meta', JSON.stringify(photo.meta || {}))
+        // Фото может быть необязательным (настройка направления)
+        if (photo?.file) {
+            fd.append('photo', photo.file)
+            fd.append('photo_meta', JSON.stringify(photo.meta || {}))
+        }
         return api.apiPostForm(`api/visits/${dealId}/result`, fd)
     }
 

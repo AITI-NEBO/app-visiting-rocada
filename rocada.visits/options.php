@@ -156,6 +156,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                         ];
                     }
 
+                    // Хотя бы один способ добавить фото должен быть включён
+                    $photoAllowCamera  = !isset($d['photo_allow_camera'])  || !empty($d['photo_allow_camera']);
+                    $photoAllowGallery = !isset($d['photo_allow_gallery']) || !empty($d['photo_allow_gallery']);
+                    if (!$photoAllowCamera && !$photoAllowGallery) {
+                        $photoAllowCamera = $photoAllowGallery = true;
+                    }
+
                     $normalised[] = [
                         'id'               => preg_replace('/[^\w\-]/', '', $d['id']),
                         'name'             => mb_substr(trim($d['name']), 0, 100),
@@ -176,6 +183,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                     'photo_wrong_geo_field' => $d['photo_wrong_geo_field'] ?? '',
                     'photo_max_distance'    => max(1, (int)($d['photo_max_distance'] ?? 100) ?: 100),
                     'photo_max_time_diff'   => max(0, (int)($d['photo_max_time_diff'] ?? 120)),
+                    // Флаги: у старых направлений их нет — по умолчанию включены
+                    'photo_required'        => !isset($d['photo_required']) || !empty($d['photo_required']),
+                    'photo_allow_camera'    => $photoAllowCamera,
+                    'photo_allow_gallery'   => $photoAllowGallery,
+                    'photo_lat_field'       => $d['photo_lat_field'] ?? '',
+                    'photo_lng_field'       => $d['photo_lng_field'] ?? '',
+                    'photo_date_field'      => $d['photo_date_field'] ?? '',
                     'deal_fields'      => array_values(array_filter($d['deal_fields'] ?? [])),
                     'allowed_users'    => array_values(array_filter(array_map('intval', $d['allowed_users'] ?? []))),
                     'result_statuses'  => $resultStatuses,
@@ -389,6 +403,8 @@ $jsData['ufFileFields'] = array_values(array_filter(
             pipelines: [], stages_today: [], stages_tomorrow: [], stages_planned: [], stages_map: [],
             lat_field: '', lng_field: '', comment_field: '', visit_date_field: '', checkin_field: '',
             photo_wrong_geo_field: '', photo_max_distance: 100, photo_max_time_diff: 120, photo_field: '',
+            photo_required: true, photo_allow_camera: true, photo_allow_gallery: true,
+            photo_lat_field: '', photo_lng_field: '', photo_date_field: '',
             deal_fields: [], allowed_users: [],
             result_statuses: []
         };
@@ -562,6 +578,9 @@ $jsData['ufFileFields'] = array_values(array_filter(
         const chkHtml   = buildSelect('chk_'+dir.id, ufFields, dir.checkin_field||'', false, 'id', 'name', true);
         const wgHtml    = buildSelect('wg_'+dir.id,  ufFields, dir.photo_wrong_geo_field||'', false, 'id', 'name', true);
         const phHtml    = buildSelect('ph_'+dir.id,  ufFileFields, dir.photo_field||'', false, 'id', 'name', true);
+        const platHtml  = buildSelect('plat_'+dir.id, ufFields, dir.photo_lat_field||'', false, 'id', 'name', true);
+        const plngHtml  = buildSelect('plng_'+dir.id, ufFields, dir.photo_lng_field||'', false, 'id', 'name', true);
+        const pdtHtml   = buildSelect('pdt_'+dir.id,  ufFields, dir.photo_date_field||'', false, 'id', 'name', true);
         const usersHtml = buildSelect('usr_'+dir.id, users, (dir.allowed_users||[]).map(Number), true, 'id', 'name', true);
 
         const statusesHtml = statuses.map(s => renderStatus(dir.id, s, isService)).join('');
@@ -595,14 +614,21 @@ $jsData['ufFileFields'] = array_values(array_filter(
             <tr><td>Стадии на Карте:<br><small>Если пусто — выводятся все сделки</small></td><td>${mapHtml}</td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0"><b>Поля сделки</b></td></tr>
             <tr><td>Доп. поля:</td><td>${ufHtml}<br><small>Ctrl+клик</small></td></tr>
-            <tr><td>Поле широты:</td><td>${latHtml}</td></tr>
-            <tr><td>Поле долготы:</td><td>${lngHtml}</td></tr>
+            <tr><td>Поле широты:<br><small>Местоположение сотрудника в момент сохранения итога</small></td><td>${latHtml}</td></tr>
+            <tr><td>Поле долготы:<br><small>Местоположение сотрудника в момент сохранения итога</small></td><td>${lngHtml}</td></tr>
             <tr><td>Поле комментария:</td><td>${comHtml}</td></tr>
             <tr><td>Поле даты визита:</td><td>${vdHtml}</td></tr>
-            <tr><td>Поле даты/времени чекина:<br><small>Заполняется при подтверждении геолокации (например UF_DATA_VREMIA_CHEKIN)</small></td><td>${chkHtml}</td></tr>
-            <tr><td colspan="2"><hr style="margin:6px 0"><b>Фото входной группы</b>
-              <span style="font-weight:normal;color:#888;font-size:12px"> — обязательно при завершении визита</span></td></tr>
+            <tr><td>Поле даты/времени чекина:<br><small>Время сохранения итога (например UF_DATA_VREMIA_CHEKIN)</small></td><td>${chkHtml}</td></tr>
+            <tr><td colspan="2"><hr style="margin:6px 0"><b>Фото входной группы</b></td></tr>
+            <tr><td>Фото обязательно:<br><small>Без фото визит не завершить. Если не обязательно и фото нет — «Неверная геолокация» = Да</small></td><td><label><input type="checkbox" class="dir-photo-req"${dir.photo_required !== false ? ' checked' : ''}> Обязательно</label></td></tr>
+            <tr><td>Как можно добавить фото:<br><small>Хотя бы один способ</small></td><td>
+              <label><input type="checkbox" class="dir-photo-cam"${dir.photo_allow_camera !== false ? ' checked' : ''}> Сделать фото</label><br>
+              <label><input type="checkbox" class="dir-photo-gal"${dir.photo_allow_gallery !== false ? ' checked' : ''}> Выбрать из галереи</label>
+            </td></tr>
             <tr><td>Поле для фото:<br><small>Файловое поле сделки. Множественное — фото добавляется к уже загруженным</small></td><td>${phHtml}</td></tr>
+            <tr><td>Поле «Широта из фото»:<br><small>Место съёмки: из метаданных фото или с телефона в момент съёмки</small></td><td>${platHtml}</td></tr>
+            <tr><td>Поле «Долгота из фото»:</td><td>${plngHtml}</td></tr>
+            <tr><td>Поле «Дата/время из фото»:<br><small>Время съёмки: из метаданных фото или с телефона</small></td><td>${pdtHtml}</td></tr>
             <tr><td>Поле «Неверная геолокация»:<br><small>Да/Нет. «Нет» — дата и место фото подтверждены, «Да» — нет</small></td><td>${wgHtml}</td></tr>
             <tr><td>Допустимое расстояние, м:<br><small>От места съёмки до точки визита</small></td><td><input type="number" min="1" step="1" class="dir-photo-dist" value="${escHtml(dir.photo_max_distance||100)}" style="width:120px"></td></tr>
             <tr><td>Допустимое отклонение по времени, мин:<br><small>От даты и времени визита (поле даты визита) до времени съёмки, в обе стороны. 0 — сверять только дату. Если у визита не указано время — сверяется только дата</small></td><td><input type="number" min="0" step="1" class="dir-photo-time" value="${escHtml(dir.photo_max_time_diff ?? 120)}" style="width:120px"></td></tr>
@@ -660,6 +686,12 @@ $jsData['ufFileFields'] = array_values(array_filter(
             photo_wrong_geo_field: getSingle('#wg_'+id),
             photo_max_distance:    parseInt(getSingle('.dir-photo-dist'), 10) || 100,
             photo_max_time_diff:   (v => isNaN(v) ? 120 : Math.max(0, v))(parseInt(getSingle('.dir-photo-time'), 10)),
+            photo_required:        !!card.querySelector('.dir-photo-req')?.checked,
+            photo_allow_camera:    !!card.querySelector('.dir-photo-cam')?.checked,
+            photo_allow_gallery:   !!card.querySelector('.dir-photo-gal')?.checked,
+            photo_lat_field:       getSingle('#plat_'+id),
+            photo_lng_field:       getSingle('#plng_'+id),
+            photo_date_field:      getSingle('#pdt_'+id),
             allowed_users:    getMulti('#usr_'+id).map(Number),
             result_statuses:  resultStatuses,
         };
@@ -708,10 +740,16 @@ $jsData['ufFileFields'] = array_values(array_filter(
         renderAll();
     });
 
-    document.querySelector('form').addEventListener('submit', function() {
+    document.querySelector('form').addEventListener('submit', function(e) {
         const cards = document.querySelectorAll('#js-directions-list .pwa-dir-card');
         const result = [];
         cards.forEach(card => result.push(collectDir(card)));
+        const noPhotoWay = result.find(d => !d.photo_allow_camera && !d.photo_allow_gallery);
+        if (noPhotoWay) {
+            e.preventDefault();
+            alert('Направление «' + noPhotoWay.name + '»: выберите хотя бы один способ добавить фото — «Сделать фото» или «Выбрать из галереи».');
+            return;
+        }
         document.getElementById('pwa_directions_json').value = JSON.stringify(result);
     });
 

@@ -336,12 +336,52 @@ function pwaVisitPhotoRestFile(array $file, int $dealId): array
 }
 
 /**
+ * Описание пользовательского поля сделки (тип, множественность). Кэшируется на запрос.
+ */
+function pwaDealUfInfo(string $fieldCode): array
+{
+    static $cache = [];
+    if (!array_key_exists($fieldCode, $cache)) {
+        $cache[$fieldCode] = \CUserTypeEntity::GetList([], ['ENTITY_ID' => 'CRM_DEAL', 'FIELD_NAME' => $fieldCode])->Fetch() ?: [];
+    }
+    return $cache[$fieldCode];
+}
+
+/**
+ * Координата для crm.deal.update: число для числового поля, строка для строкового.
+ */
+function pwaDealCoordValue(string $fieldCode, float $value)
+{
+    $value = round($value, 6);
+    return (pwaDealUfInfo($fieldCode)['USER_TYPE_ID'] ?? '') === 'double'
+        ? $value
+        : number_format($value, 6, '.', '');
+}
+
+/**
+ * Дата/время для crm.deal.update в формате, подходящем типу поля.
+ */
+function pwaDealDateValue(string $fieldCode, \DateTime $value): string
+{
+    $tz   = new \DateTimeZone(date_default_timezone_get());
+    $dt   = (clone $value)->setTimezone($tz);
+    $type = pwaDealUfInfo($fieldCode)['USER_TYPE_ID'] ?? '';
+    if ($type === 'datetime') {
+        return $dt->format('c');
+    }
+    if ($type === 'date') {
+        return $dt->format('Y-m-d');
+    }
+    return $dt->format('d.m.Y H:i:s');
+}
+
+/**
  * Значение файлового UF-поля для crm.deal.update.
  * Множественное поле: новое фото добавляется к уже загруженным.
  */
 function pwaDealFileFieldValue(string $fieldCode, array $restFile, array $currentValue): array
 {
-    $uf = \CUserTypeEntity::GetList([], ['ENTITY_ID' => 'CRM_DEAL', 'FIELD_NAME' => $fieldCode])->Fetch();
+    $uf = pwaDealUfInfo($fieldCode);
     if (($uf['MULTIPLE'] ?? 'N') !== 'Y') {
         return ['fileData' => $restFile];
     }
