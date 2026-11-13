@@ -80,8 +80,9 @@ function handleVisitsResult(array $params): void
         pwaSendError('Визит не найден или нет доступа', 404);
     }
 
-    // Фото входной группы: обязательность и разрешённые способы — в настройках направления
-    $photoRequired = ($dirCfg['photo_required'] ?? true) !== false;
+    // Фото входной группы: обязательность задаётся в выбранном итоге;
+    // если у направления нет итогов или итог не выбран — общей галочкой направления
+    $photoRequired = pwaVisitPhotoRequired($dirCfg, $statusId);
     $photo     = $params['files']['photo'] ?? null;
     $hasPhoto  = !empty($photo) && ($photo['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
     $photoMeta = json_decode((string)($body['photo_meta'] ?? ''), true);
@@ -176,11 +177,11 @@ function handleVisitsResult(array $params): void
     if (!empty($deviceField)) {
         $updateFields[$deviceField] = 1;
     }
-    // «Неверная геолокация» (Да/Нет): Нет — дата и место фото подтверждены,
-    // Да — не подтверждены или фото не приложено
+    // «Неверная геолокация» (Да/Нет): Нет — дата и место фото подтверждены, Да — не подтверждены.
+    // Фото не приложено (значит, для этого итога оно не обязательно) — поле не трогаем
     $wrongGeoField = $dirCfg['photo_wrong_geo_field'] ?? '';
-    if (!empty($wrongGeoField)) {
-        $updateFields[$wrongGeoField] = ($photoCheck && $photoCheck['ok']) ? 0 : 1;
+    if (!empty($wrongGeoField) && $photoCheck) {
+        $updateFields[$wrongGeoField] = $photoCheck['ok'] ? 0 : 1;
     }
 
     // Местоположение и время сохранения итога — в поля широты, долготы и чекина
@@ -247,7 +248,7 @@ function handleVisitsResult(array $params): void
     // Фото входной группы: результат проверки
     $tlText .= "\n\n" . ($photoCheck
         ? pwaVisitPhotoCheckText($photoCheck)
-        : "📷 Фото входной группы не приложено\n⚠️ Неверная геолокация: нет фото");
+        : '📷 Фото входной группы не приложено (для этого итога не обязательно)');
 
     // Сделка уже обновлена — сразу отвечаем приложению, а комментарий с фото
     // добавляем после ответа: загрузка файла в таймлайн небыстрая,
@@ -283,6 +284,24 @@ function handleVisitsResult(array $params): void
     }
 
     exit;
+}
+
+/**
+ * Обязательно ли фото входной группы.
+ * Есть итоги и итог выбран — галочка в этом итоге (по умолчанию нет);
+ * итогов нет или итог не выбран — общая галочка направления.
+ */
+function pwaVisitPhotoRequired(array $dirCfg, string $statusId): bool
+{
+    $statuses = $dirCfg['result_statuses'] ?? [];
+    if (!empty($statuses) && $statusId !== '') {
+        foreach ($statuses as $st) {
+            if (($st['id'] ?? '') === $statusId) {
+                return !empty($st['photo_required']);
+            }
+        }
+    }
+    return ($dirCfg['photo_required'] ?? true) !== false;
 }
 
 /**

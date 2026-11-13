@@ -3,8 +3,8 @@
     <h4 class="vp-title">
       <span class="material-symbols-rounded" style="font-size:18px">storefront</span>
       Фото входной группы клиники
-      <span v-if="required" class="vp-required">*обязательно</span>
-      <span v-else class="vp-optional">(необязательно)</span>
+      <span v-if="required === true" class="vp-required">*обязательно</span>
+      <span v-else-if="required === false" class="vp-optional">(необязательно для этого итога)</span>
     </h4>
     <p class="vp-hint">Название клиники на фото должно читаться.</p>
 
@@ -82,8 +82,7 @@
         </button>
       </div>
       <p class="vp-note">
-        <template v-if="required">Фото без даты и места съёмки не мешает сохранить визит, но в сделке будет отметка «Неверная геолокация».</template>
-        <template v-else>Без фото, а также с фото без даты и места съёмки, в сделке будет отметка «Неверная геолокация».</template>
+        Фото без даты и места съёмки не мешает сохранить визит, но в сделке будет отметка «Неверная геолокация».
         <template v-if="allowCamera && allowGallery"> Надёжнее снимать через «Сделать фото».</template>
       </p>
     </template>
@@ -97,8 +96,8 @@ import GeoHelp from './GeoHelp.vue'
 const props = defineProps({
   // { file, preview, meta: { source, picked, taken_at, lat, lng, accuracy, geo_source, exif_* } } | null
   modelValue: { type: Object, default: null },
-  // Настройки направления: обязательность фото и разрешённые способы добавления
-  required:     { type: Boolean, default: true },
+  // Обязательность фото: true / false / null — ещё неизвестно (итог не выбран)
+  required:     { type: Boolean, default: null },
   allowCamera:  { type: Boolean, default: true },
   allowGallery: { type: Boolean, default: true },
 })

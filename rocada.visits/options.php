@@ -153,6 +153,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && check_bitrix_sessid()) {
                             'stage'        => trim($st['stage'] ?? ''),
                             'photo_fields' => array_values(array_filter((array)($st['photo_fields'] ?? []))),
                             'is_successful'=> !empty($st['is_successful']),
+                            // Фото входной группы обязательно для этого итога (по умолчанию нет)
+                            'photo_required' => !empty($st['photo_required']),
                         ];
                     }
 
@@ -481,7 +483,8 @@ $jsData['ufFileFields'] = array_values(array_filter(
         const photoHtml = isService
             ? `<tr><td style="padding-left:16px;font-size:12px;color:#888">Фото-поля:</td><td colspan="4">${buildSelect('st_pf_'+sid, ufFields, st.photo_fields||[], true, 'id', 'name', true)}<br><small>Куда записывать фото (Ctrl+клик)</small></td></tr>`
             : '';
-        const successHtml = `<tr><td style="padding-left:16px;font-size:12px;color:#888"></td><td colspan="4"><label><input type="checkbox" class="st-success"${st.is_successful?' checked':''}> Успешный визит (требует заполнение ИНФОПОВОДА)</label></td></tr>`;
+        const successHtml = `<tr><td style="padding-left:16px;font-size:12px;color:#888"></td><td colspan="4"><label><input type="checkbox" class="st-success"${st.is_successful?' checked':''}> Успешный визит (требует заполнение ИНФОПОВОДА)</label></td></tr>`
+            + `<tr><td style="padding-left:16px;font-size:12px;color:#888"></td><td colspan="4"><label><input type="checkbox" class="st-photo-req"${st.photo_required?' checked':''}> Фото входной группы обязательно для этого итога</label></td></tr>`;
         return `<div class="rs-row" data-sid="${sid}" style="border:1px solid #ddd;border-radius:3px;padding:8px;margin-bottom:6px;background:#fff">
           <table style="width:100%;border-collapse:collapse"><tr>
             <td style="width:24px"><button type="button" onclick="removeStatus('${dirId}','${sid}')" style="color:red;background:none;border:none;cursor:pointer;font-size:14px;padding:0">✕</button></td>
@@ -620,7 +623,7 @@ $jsData['ufFileFields'] = array_values(array_filter(
             <tr><td>Поле даты визита:</td><td>${vdHtml}</td></tr>
             <tr><td>Поле даты/времени чекина:<br><small>Время сохранения итога (например UF_DATA_VREMIA_CHEKIN)</small></td><td>${chkHtml}</td></tr>
             <tr><td colspan="2"><hr style="margin:6px 0"><b>Фото входной группы</b></td></tr>
-            <tr><td>Фото обязательно:<br><small>Без фото визит не завершить. Если не обязательно и фото нет — «Неверная геолокация» = Да</small></td><td><label><input type="checkbox" class="dir-photo-req"${dir.photo_required !== false ? ' checked' : ''}> Обязательно</label></td></tr>
+            <tr><td>Фото обязательно:<br><small>Действует, только если у направления нет итогов (или итог не выбран). Когда итоги есть — обязательность задаётся в каждом итоге ниже</small></td><td><label><input type="checkbox" class="dir-photo-req"${dir.photo_required !== false ? ' checked' : ''}> Обязательно</label></td></tr>
             <tr><td>Как можно добавить фото:<br><small>Хотя бы один способ</small></td><td>
               <label><input type="checkbox" class="dir-photo-cam"${dir.photo_allow_camera !== false ? ' checked' : ''}> Сделать фото</label><br>
               <label><input type="checkbox" class="dir-photo-gal"${dir.photo_allow_gallery !== false ? ' checked' : ''}> Выбрать из галереи</label>
@@ -660,6 +663,7 @@ $jsData['ufFileFields'] = array_values(array_filter(
                 color: row.querySelector('.st-color')?.value || '#0066ff',
                 stage: row.querySelector('select[id^="st_stage_"]')?.value || '',
                 is_successful: row.querySelector('.st-success')?.checked || false,
+                photo_required: row.querySelector('.st-photo-req')?.checked || false,
             };
             const pfEl = row.querySelector('select[id^="st_pf_"]');
             st.photo_fields = (isService && pfEl) ? [...pfEl.selectedOptions].map(o => o.value) : [];
@@ -730,6 +734,7 @@ $jsData['ufFileFields'] = array_values(array_filter(
             color: row.querySelector('.st-color')?.value || '#0066ff',
             stage: row.querySelector('select[id^="st_stage_"]')?.value || '',
             is_successful: row.querySelector('.st-success')?.checked || false,
+            photo_required: row.querySelector('.st-photo-req')?.checked || false,
             photo_fields: [],
         }));
         container.innerHTML = current.map(s => renderStatus(dirId, s, isService)).join('');

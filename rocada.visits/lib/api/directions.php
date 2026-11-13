@@ -29,6 +29,7 @@ function handleDirections(array $params): void
             'color'         => $st['color'] ?? '#0066ff',
             'photo_fields'  => $st['photo_fields'] ?? [],
             'is_successful' => (bool)($st['is_successful'] ?? false),
+            'photo_required' => (bool)($st['photo_required'] ?? false),
         ], $d['result_statuses'] ?? []);
 
         return [

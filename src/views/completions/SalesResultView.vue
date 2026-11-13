@@ -122,7 +122,15 @@ const savingStage   = ref('') // 'geo' | 'save'
 const errorMsg      = ref('')
 
 // Настройки фото из направления (по умолчанию: обязательно, камера и галерея)
-const photoRequired = computed(() => currentDirection.value?.photo_required !== false)
+// Обязательность фото: есть итоги — по выбранному итогу (пока итог не выбран — null, «ещё неизвестно»),
+// итогов нет — общая галочка направления
+const photoRequired = computed(() => {
+  if (statuses.value.length) {
+    const st = statuses.value.find(s => s.id === selectedId.value)
+    return st ? !!st.photo_required : null
+  }
+  return currentDirection.value?.photo_required !== false
+})
 const allowCamera   = computed(() => currentDirection.value?.photo_allow_camera !== false)
 const allowGallery  = computed(() => currentDirection.value?.photo_allow_gallery !== false)
 
