@@ -1,7 +1,7 @@
 <template>
   <div class="sales-result">
     <!-- Step 1: проверка доступа к геолокации -->
-    <GeoAccessStep v-if="step === 1" @ready="step = 2" />
+    <GeoAccessStep v-if="step === 1" :point-lat="visitPoint.lat" :point-lng="visitPoint.lng" @ready="step = 2" />
 
     <!-- Step 2: Result -->
     <div v-if="step === 2" class="step-content animate-fade-in-up">
@@ -108,7 +108,15 @@ const props = defineProps({ visitId: { type: [String, Number], required: true } 
 const router      = useRouter()
 const api         = useApi()
 const { currentDirection } = useDirections()
-const { loadVisits, submitResult } = useVisits()
+const { findVisit, loadVisits, submitResult } = useVisits()
+
+// Точка визита — синяя метка на карте шага геолокации
+const visitPoint = computed(() => {
+  const v = findVisit(props.visitId)
+  const lat = parseFloat(v?.lat ?? v?.geoLat)
+  const lng = parseFloat(v?.lng ?? v?.geoLng)
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : { lat: null, lng: null }
+})
 
 const step          = ref(1)
 
